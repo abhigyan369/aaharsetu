@@ -1,0 +1,34 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# requirements.txt — Python dependencies for Food Waste Redistribution Platform
+#
+# Pin major versions to avoid surprise breaking changes.
+# Run:  pip install -r requirements.txt
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Web Framework ─────────────────────────────────────────────────────────────
+fastapi==0.111.1          # The async web framework we build the API with
+uvicorn[standard]==0.30.1 # ASGI server that runs FastAPI (like gunicorn but async-native)
+
+# ── Templating ────────────────────────────────────────────────────────────────
+jinja2==3.1.4             # Server-side HTML templates (renders pages on the backend)
+python-multipart==0.0.9   # Required for form data / file upload parsing in FastAPI
+
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy==2.0.31        # ORM — maps Python classes to database tables
+asyncpg==0.29.0           # Async PostgreSQL driver (SQLAlchemy uses this under the hood)
+alembic==1.13.2           # Database migration tool — tracks schema changes over time
+
+# ── Settings / Config ─────────────────────────────────────────────────────────
+pydantic-settings==2.3.4  # Reads config from .env file into typed Python settings objects
+python-dotenv==1.0.1      # Loads .env file into environment variables
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+passlib[bcrypt]==1.7.4    # Password hashing (bcrypt is the industry standard)
+bcrypt==4.0.1             # Pinned: passlib 1.7.4 has a known compat issue with bcrypt>=4.1
+python-jose[cryptography]==3.3.0  # JWT token creation and verification
+
+# ── Dev Utilities ─────────────────────────────────────────────────────────────
+# (Move these to a separate requirements-dev.txt if you want cleaner prod images)
+httpx==0.27.0             # Async HTTP client; also used by FastAPI's test client
+pytest==8.2.2             # Test runner
+pytest-asyncio==0.23.7    # Async test support for pytest

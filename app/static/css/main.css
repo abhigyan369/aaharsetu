@@ -1,0 +1,349 @@
+/*
+ * app/static/css/main.css — Global Stylesheet
+ * =============================================
+ *
+ * Structure:
+ *   1. CSS Custom Properties (design tokens — colors, fonts, spacing)
+ *   2. Reset & Base Styles
+ *   3. Typography
+ *   4. Layout (navbar, main, footer)
+ *   5. Components (buttons, alerts, cards, forms)
+ *   6. Utilities
+ *
+ * Color Palette (sustainability theme — greens + earth tones):
+ *   --color-primary:    #2D6A4F  (deep forest green)
+ *   --color-secondary:  #52B788  (fresh green)
+ *   --color-accent:     #D8A838  (warm amber — suggests harvest/earth)
+ *   --color-bg:         #F8F9F4  (off-white, natural paper feel)
+ *   --color-text:       #1B1B1B  (near-black for readability)
+ */
+
+/* ── 1. Design Tokens ────────────────────────────────────────────────────── */
+:root {
+    --color-primary:      #2D6A4F;
+    --color-primary-dark: #1B4332;
+    --color-secondary:    #52B788;
+    --color-accent:       #D8A838;
+    --color-bg:           #F8F9F4;
+    --color-surface:      #FFFFFF;
+    --color-text:         #1B1B1B;
+    --color-text-muted:   #6B7280;
+    --color-danger:       #DC2626;
+    --color-success:      #16A34A;
+    --color-warning:      #D97706;
+    --color-border:       #D1D5DB;
+
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+    --radius-sm:  4px;
+    --radius-md:  8px;
+    --radius-lg:  12px;
+    --radius-xl:  20px;
+
+    --shadow-sm:  0 1px 3px rgba(0,0,0,0.08);
+    --shadow-md:  0 4px 12px rgba(0,0,0,0.10);
+    --shadow-lg:  0 8px 24px rgba(0,0,0,0.12);
+
+    --transition: 200ms ease;
+    --max-width:  1100px;
+    --spacing:    1rem;
+}
+
+/* ── 2. Reset & Base ─────────────────────────────────────────────────────── */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: 16px;
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+img {
+    max-width: 100%;
+    display: block;
+}
+
+a {
+    color: var(--color-primary);
+    text-decoration: none;
+    transition: color var(--transition);
+}
+
+a:hover {
+    color: var(--color-primary-dark);
+    text-decoration: underline;
+}
+
+/* ── 3. Typography ───────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--color-primary-dark);
+}
+
+h1 { font-size: 2rem;   }
+h2 { font-size: 1.5rem; }
+h3 { font-size: 1.25rem;}
+h4 { font-size: 1rem;   }
+
+p { margin-bottom: 1rem; }
+
+/* ── 4. Layout ───────────────────────────────────────────────────────────── */
+.navbar {
+    background-color: var(--color-primary);
+    padding: 0.875rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: var(--shadow-sm);
+}
+
+.navbar-brand {
+    color: #fff;
+    font-size: 1.25rem;
+    font-weight: 700;
+    text-decoration: none;
+    letter-spacing: -0.02em;
+}
+
+.navbar-brand:hover {
+    color: var(--color-secondary);
+    text-decoration: none;
+}
+
+.navbar-links {
+    list-style: none;
+    display: flex;
+    gap: 1.5rem;
+}
+
+.navbar-links a {
+    color: rgba(255,255,255,0.85);
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: color var(--transition);
+}
+
+.navbar-links a:hover {
+    color: #fff;
+    text-decoration: none;
+}
+
+.main-content {
+    flex: 1;
+    max-width: var(--max-width);
+    width: 100%;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+}
+
+.footer {
+    background-color: var(--color-primary-dark);
+    color: rgba(255,255,255,0.7);
+    text-align: center;
+    padding: 1.25rem;
+    font-size: 0.875rem;
+}
+
+/* ── 5. Components ───────────────────────────────────────────────────────── */
+
+/* Buttons */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.6rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background-color var(--transition), transform var(--transition), box-shadow var(--transition);
+    text-decoration: none;
+}
+
+.btn:active { transform: translateY(1px); }
+
+.btn-primary {
+    background-color: var(--color-primary);
+    color: #fff;
+}
+.btn-primary:hover {
+    background-color: var(--color-primary-dark);
+    color: #fff;
+    text-decoration: none;
+    box-shadow: var(--shadow-md);
+}
+
+.btn-secondary {
+    background-color: var(--color-secondary);
+    color: #fff;
+}
+.btn-secondary:hover {
+    background-color: #3d9971;
+    color: #fff;
+    text-decoration: none;
+}
+
+.btn-outline {
+    background-color: transparent;
+    color: var(--color-primary);
+    border: 2px solid var(--color-primary);
+}
+.btn-outline:hover {
+    background-color: var(--color-primary);
+    color: #fff;
+    text-decoration: none;
+}
+
+.btn-danger {
+    background-color: var(--color-danger);
+    color: #fff;
+}
+.btn-danger:hover {
+    background-color: #b91c1c;
+    color: #fff;
+    text-decoration: none;
+}
+
+/* Alerts (flash messages) */
+.alert {
+    padding: 0.875rem 1.25rem;
+    border-radius: var(--radius-md);
+    margin: 0.75rem auto;
+    max-width: var(--max-width);
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.alert-success { background-color: #DCFCE7; color: #15803D; border-left: 4px solid #16A34A; }
+.alert-error   { background-color: #FEE2E2; color: #B91C1C; border-left: 4px solid #DC2626; }
+.alert-warning { background-color: #FEF3C7; color: #92400E; border-left: 4px solid #D97706; }
+.alert-info    { background-color: #DBEAFE; color: #1E40AF; border-left: 4px solid #3B82F6; }
+
+/* Cards */
+.card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow var(--transition), transform var(--transition);
+}
+.card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+/* Forms */
+.form-group {
+    margin-bottom: 1.25rem;
+}
+
+.form-label {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 0.4rem;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+    width: 100%;
+    padding: 0.65rem 0.875rem;
+    border: 1.5px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    color: var(--color-text);
+    background-color: var(--color-surface);
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+    outline: none;
+    border-color: var(--color-secondary);
+    box-shadow: 0 0 0 3px rgba(82, 183, 136, 0.2);
+}
+
+.form-textarea { min-height: 100px; resize: vertical; }
+
+/* Status Badges */
+.badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border-radius: var(--radius-xl);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.badge-available  { background-color: #DCFCE7; color: #15803D; }
+.badge-claimed    { background-color: #DBEAFE; color: #1D4ED8; }
+.badge-picked_up  { background-color: #F3F4F6; color: #374151; }
+.badge-expired    { background-color: #FEE2E2; color: #B91C1C; }
+.badge-cancelled  { background-color: #FEF9C3; color: #713F12; }
+
+/* ── 6. Utilities ────────────────────────────────────────────────────────── */
+.container {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 0 1.5rem;
+}
+
+.text-muted  { color: var(--color-text-muted); }
+.text-center { text-align: center; }
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem;   }
+.mt-3 { margin-top: 1.5rem; }
+.mt-4 { margin-top: 2rem;   }
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 1rem;   }
+
+/* Simple responsive grid for listing cards */
+.grid-auto {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.25rem;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .navbar {
+        flex-direction: column;
+        gap: 0.75rem;
+        text-align: center;
+    }
+
+    .navbar-links {
+        gap: 1rem;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    h1 { font-size: 1.6rem; }
+    h2 { font-size: 1.3rem; }
+
+    .main-content { padding: 1.25rem 1rem; }
+}
