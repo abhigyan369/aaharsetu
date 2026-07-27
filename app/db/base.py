@@ -35,7 +35,6 @@ class Base(DeclarativeBase):
 
 
 # ── Import all models here so Alembic can discover them ───────────────────────
-# When you add a new model file in app/models/, add its import here.
-# Example:
-#   from app.models.user import User          # noqa: F401
-#   from app.models.food_listing import FoodListing  # noqa: F401
+# NOTE: Model imports have been moved to app/models/__init__.py
+# Import that module to register all tables with Base.metadata:
+#   from app import models  # in alembic env.py or app startup

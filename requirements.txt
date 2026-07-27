@@ -20,6 +20,7 @@ alembic==1.13.2           # Database migration tool — tracks schema changes ov
 
 # ── Settings / Config ─────────────────────────────────────────────────────────
 pydantic-settings==2.3.4  # Reads config from .env file into typed Python settings objects
+pydantic[email]==2.7.4    # Enables EmailStr validation (requires email-validator under the hood)
 python-dotenv==1.0.1      # Loads .env file into environment variables
 
 # ── Auth ──────────────────────────────────────────────────────────────────────

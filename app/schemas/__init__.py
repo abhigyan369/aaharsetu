@@ -13,10 +13,29 @@ WHY THIS FOLDER EXISTS:
 
   This separation lets you control exactly what gets exposed in the API
   (e.g., never expose `hashed_password` even if it's on the User model).
-
-  Planned schemas (Phase 2):
-    - user.py          → UserBase, UserCreate, UserRead, UserUpdate
-    - food_listing.py  → FoodListingBase, FoodListingCreate, FoodListingRead, etc.
-    - claim.py         → ClaimCreate, ClaimRead, etc.
-    - token.py         → Token, TokenData (JWT response shapes)
 """
+
+# Re-export everything for convenient imports:
+#   from app.schemas import UserRead, FoodListingCreate, ...
+from app.schemas.user import UserBase, UserCreate, UserUpdate, UserRead, UserPublic
+from app.schemas.food_listing import (
+    FoodListingBase,
+    FoodListingCreate,
+    FoodListingUpdate,
+    FoodListingRead,
+    FoodListingSummary,
+)
+from app.schemas.claim import ClaimBase, ClaimCreate, ClaimUpdate, ClaimRead, ClaimSummary
+from app.schemas.notification import NotificationRead, NotificationCreate, NotificationUpdate
+
+__all__ = [
+    # User
+    "UserBase", "UserCreate", "UserUpdate", "UserRead", "UserPublic",
+    # FoodListing
+    "FoodListingBase", "FoodListingCreate", "FoodListingUpdate",
+    "FoodListingRead", "FoodListingSummary",
+    # Claim
+    "ClaimBase", "ClaimCreate", "ClaimUpdate", "ClaimRead", "ClaimSummary",
+    # Notification
+    "NotificationRead", "NotificationCreate", "NotificationUpdate",
+]

@@ -47,11 +47,10 @@ from app.core.config import settings
 # here (or in app/db/base.py), autogenerate won't see it!
 from app.db.base import Base  # noqa: F401
 
-# Uncomment as you add model files in Phase 2:
-# from app.models.user import User            # noqa: F401
-# from app.models.food_listing import FoodListing  # noqa: F401
-# from app.models.claim import Claim          # noqa: F401
-# from app.models.notification import Notification  # noqa: F401
+# Import app.models package — its __init__.py registers all four models
+# (User, FoodListing, Claim, Notification) with Base.metadata in one shot.
+# If you add a new model, add it to app/models/__init__.py.
+import app.models  # noqa: F401
 
 # ─────────────────────────────────────────────────────────────────────────────
 config = context.config

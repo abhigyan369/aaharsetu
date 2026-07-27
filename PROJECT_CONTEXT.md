@@ -1,6 +1,5 @@
 # Food Waste Redistribution Platform — Phase-wise Vibecoding Prompts
 
-
 ## Phase 0 — Project Setup & Structure
 
 ```
@@ -32,7 +31,7 @@ need to understand this well enough to explain it in interviews.
 
 ---
 
-## Phase 2 — Database Models
+## Phase 1 — Database Models
 
 ```
 Continuing the Food Waste Redistribution Platform (FastAPI + SQLAlchemy async + PostgreSQL,
@@ -70,7 +69,7 @@ Explain the relationships briefly so I understand the FK structure.
 
 ---
 
-## Phase 3 — Authentication (JWT + Role-based Access)
+## Phase 2 — Authentication (JWT + Role-based Access)
 
 ```
 Continuing the Food Waste Redistribution Platform (FastAPI + SQLAlchemy async +
@@ -96,7 +95,7 @@ Requirements:
 
 ---
 
-## Phase 4 — Food Listing CRUD + Status Workflow
+## Phase 3 — Food Listing CRUD + Status Workflow
 
 ```
 Continuing the Food Waste Redistribution Platform. Auth from Phase 3 exists
@@ -127,7 +126,7 @@ be able to explain without invoking ML).
 
 ---
 
-## Phase 5 — Notifications (Email)
+## Phase 4 — Notifications (Email)
 
 ```
 Continuing the Food Waste Redistribution Platform. Listings + Claims from Phase 4 exist.
@@ -150,7 +149,7 @@ SMTP config with sensible defaults/comments for local dev.
 
 ---
 
-## Phase 6 — Image Upload
+## Phase 5 — Image Upload
 
 ```
 Continuing the Food Waste Redistribution Platform.
@@ -170,7 +169,7 @@ in a deployed app — I want to be able to answer this if asked in an interview.
 
 ---
 
-## Phase 7 — Analytics Dashboard (Admin)
+## Phase 6 — Analytics Dashboard (Admin)
 
 ```
 Continuing the Food Waste Redistribution Platform.
@@ -192,7 +191,7 @@ queries in comments since I'll need to explain the analytics logic.
 
 ---
 
-## Phase 8 — Frontend Pages (Jinja2 + HTML/CSS)
+## Phase 7 — Frontend Pages (Jinja2 + HTML/CSS)
 
 ```
 Continuing the Food Waste Redistribution Platform. All backend APIs from Phases 3-7 exist.
@@ -221,7 +220,7 @@ Keep this simple and functional over pretty — I'll polish CSS later if I have 
 
 ---
 
-## Phase 9 — Testing
+## Phase 8 — Testing
 
 ```
 Continuing the Food Waste Redistribution Platform.
@@ -244,7 +243,7 @@ that's what I'll most likely be asked about.
 
 ---
 
-## Phase 10 — Dockerize the App
+## Phase 9 — Dockerize the App
 
 ```
 Continuing the Food Waste Redistribution Platform.
@@ -264,7 +263,7 @@ and image size best practices," not just "I copy-pasted a Dockerfile."
 
 ---
 
-## Phase 11 — Deployment (Render/Railway) + CI/CD
+## Phase 10 — Deployment (Render/Railway) + CI/CD
 
 ```
 Continuing the Food Waste Redistribution Platform. Docker setup from Phase 10 exists.
