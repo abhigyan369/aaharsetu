@@ -1,0 +1,522 @@
+{% extends "base.html" %}
+
+{# ─────────────────────────────────────────────────────────────────────────── #}
+{# app/templates/admin/dashboard.html — Admin Analytics Dashboard              #}
+{#                                                                              #}
+{# WHY JINJA2 + CHART.JS INSTEAD OF A REACT SPA?                               #}
+{#   - No build step (no npm, no Webpack, no TypeScript)                        #}
+{#   - Chart.js is loaded via a CDN <script> tag — one line                    #}
+{#   - All data is embedded server-side in <script> blocks as JSON literals    #}
+{#     (safe via Jinja2's `tojson` filter which escapes HTML-unsafe chars)     #}
+{#   - This is the right trade-off for a team that knows HTML/CSS/vanilla JS   #}
+{# ─────────────────────────────────────────────────────────────────────────── #}
+
+{% block title %}Admin Dashboard — FoodShare{% endblock %}
+{% block meta_description %}Analytics dashboard for FoodShare platform administrators{% endblock %}
+
+{% block extra_head %}
+{# Chart.js loaded from CDN — no npm install needed. Pin to a minor version    #}
+{# so you get patch-level security fixes automatically but no breaking changes.#}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<style>
+  /* ── Dashboard-specific styles ─────────────────────────────────────────── */
+
+  /* Page wrapper with a subtle dark gradient for a "premium admin" feel */
+  .dashboard-page {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f2027 100%);
+    padding: 2rem 1.5rem 4rem;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    color: #e2e8f0;
+  }
+
+  /* Page header */
+  .dashboard-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .dashboard-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(90deg, #4ade80, #22d3ee);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 0 0 0.25rem 0;
+  }
+
+  .dashboard-header .subtitle {
+    font-size: 0.875rem;
+    color: #64748b;
+  }
+
+  .generated-at {
+    font-size: 0.75rem;
+    color: #475569;
+    text-align: right;
+  }
+
+  /* ── KPI cards row ──────────────────────────────────────────────────────── */
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .kpi-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 1.4rem 1.5rem;
+    /* Subtle "lift" animation on hover */
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    cursor: default;
+  }
+
+  .kpi-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    border-color: rgba(74,222,128,0.3);
+  }
+
+  .kpi-icon {
+    font-size: 1.75rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .kpi-value {
+    font-size: 2.25rem;
+    font-weight: 800;
+    line-height: 1;
+    background: linear-gradient(90deg, #4ade80, #22d3ee);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .kpi-label {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-top: 0.4rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Food type table ────────────────────────────────────────────────────── */
+
+  .section-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 1.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin: 0 0 1.25rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  .stats-table th {
+    text-align: left;
+    padding: 0.6rem 1rem;
+    background: rgba(255,255,255,0.05);
+    color: #64748b;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .stats-table th:first-child { border-radius: 8px 0 0 8px; }
+  .stats-table th:last-child  { border-radius: 0 8px 8px 0; }
+
+  .stats-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    color: #cbd5e1;
+  }
+
+  .stats-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .stats-table tr:hover td {
+    background: rgba(74,222,128,0.04);
+  }
+
+  .food-type-badge {
+    display: inline-block;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    background: rgba(74,222,128,0.12);
+    color: #4ade80;
+    border: 1px solid rgba(74,222,128,0.25);
+  }
+
+  /* Different badge colours per food type */
+  .badge-cooked    { background: rgba(251,191,36,0.12);  color: #fbbf24; border-color: rgba(251,191,36,0.25); }
+  .badge-packaged  { background: rgba(34,211,238,0.12);  color: #22d3ee; border-color: rgba(34,211,238,0.25); }
+  .badge-raw       { background: rgba(74,222,128,0.12);  color: #4ade80; border-color: rgba(74,222,128,0.25); }
+  .badge-bakery    { background: rgba(251,146,60,0.12);  color: #fb923c; border-color: rgba(251,146,60,0.25); }
+  .badge-other     { background: rgba(148,163,184,0.12); color: #94a3b8; border-color: rgba(148,163,184,0.25); }
+
+  .count-cell {
+    font-weight: 700;
+    color: #e2e8f0;
+  }
+
+  /* ── Charts layout ──────────────────────────────────────────────────────── */
+
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .chart-wrapper {
+    position: relative;
+    height: 280px; /* explicit height required by Chart.js */
+  }
+
+  /* ── Empty state ────────────────────────────────────────────────────────── */
+
+  .empty-state {
+    text-align: center;
+    color: #475569;
+    padding: 2rem;
+    font-size: 0.9rem;
+  }
+
+  /* ── Responsive ─────────────────────────────────────────────────────────── */
+  @media (max-width: 640px) {
+    .dashboard-header h1 { font-size: 1.5rem; }
+    .kpi-value { font-size: 1.75rem; }
+    .chart-wrapper { height: 220px; }
+  }
+</style>
+{% endblock %}
+
+
+{% block content %}
+{# ─── Override the base .main-content default padding ───────────────────── #}
+<div class="dashboard-page">
+
+  {# ── Page header ──────────────────────────────────────────────────────── #}
+  <div class="dashboard-header">
+    <div>
+      <h1>📊 Analytics Dashboard</h1>
+      <p class="subtitle">Welcome back, <strong>{{ admin_name }}</strong> — here's what's happening on the platform.</p>
+    </div>
+    <div class="generated-at">
+      Data as of<br><strong>{{ generated_at }}</strong>
+    </div>
+  </div>
+
+  {# ── KPI cards ────────────────────────────────────────────────────────── #}
+  {#
+    WHY COMPUTED SERVER-SIDE?
+    These numbers come directly from SQLAlchemy aggregate queries in the
+    router. The template only formats and displays — no JS fetch() needed.
+    This is the simplest architecture: one HTTP request, one page render.
+  #}
+  <div class="kpi-grid">
+
+    <div class="kpi-card">
+      <div class="kpi-icon">📦</div>
+      <div class="kpi-value">{{ total_listings }}</div>
+      <div class="kpi-label">Total Listings</div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-icon">🟢</div>
+      <div class="kpi-value">{{ active_listings }}</div>
+      <div class="kpi-label">Active Listings</div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-icon">🍱</div>
+      <div class="kpi-value">{{ completed_pickups }}</div>
+      <div class="kpi-label">Meals Saved*</div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-icon">🤝</div>
+      <div class="kpi-value">{{ total_donors }}</div>
+      <div class="kpi-label">Donors</div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-icon">🙋</div>
+      <div class="kpi-value">{{ total_receivers }}</div>
+      <div class="kpi-label">Receivers</div>
+    </div>
+
+  </div>
+  <p style="font-size:0.75rem; color:#475569; margin: -1.5rem 0 2.5rem;">
+    * Proxy: count of claims with status = <code>completed</code>
+  </p>
+
+
+  {# ── Charts ───────────────────────────────────────────────────────────── #}
+  {#
+    HOW CHART.JS WORKS WITH JINJA2:
+      1. Jinja2 renders the Python lists (food_type_labels, timeseries_counts,
+         etc.) as JSON literals inside <script> blocks using the `tojson` filter.
+      2. `tojson` auto-escapes HTML-unsafe characters (<, >, &) so they can't
+         break out of the <script> tag — safe by default.
+      3. Chart.js reads those JSON arrays and draws the canvas at runtime.
+      4. No fetch() call, no CORS, no API token needed — data is baked in.
+  #}
+  <div class="charts-grid">
+
+    {# Chart 1: Listings by Food Type (Bar chart) #}
+    <div class="section-card">
+      <h2 class="section-title">🥘 Listings by Food Type</h2>
+      {% if food_type_labels %}
+        <div class="chart-wrapper">
+          <canvas id="foodTypeChart" aria-label="Bar chart: listing count by food type"></canvas>
+        </div>
+      {% else %}
+        <div class="empty-state">No listings yet — charts will appear once data is available.</div>
+      {% endif %}
+    </div>
+
+    {# Chart 2: Listings per Day — last 30 days (Line chart) #}
+    <div class="section-card">
+      <h2 class="section-title">📈 Listings per Day (Last 30 Days)</h2>
+      <div class="chart-wrapper">
+        <canvas id="timeseriesChart" aria-label="Line chart: listings created per day over last 30 days"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+
+  {# ── Food type breakdown table ────────────────────────────────────────── #}
+  {#
+    WHY A TABLE IN ADDITION TO THE CHART?
+    Charts give a visual overview; a table lets the admin read exact numbers.
+    Screen readers also parse tables better than canvas elements.
+  #}
+  <div class="section-card">
+    <h2 class="section-title">📋 Food Type Breakdown — Detail</h2>
+
+    {% if food_type_labels %}
+      <table class="stats-table" id="foodTypeTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Food Type</th>
+            <th>Listing Count</th>
+            <th>Share (%)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {# food_type_labels and food_type_counts are parallel lists zipped here #}
+          {% for label, count in food_type_labels | zip(food_type_counts) %}
+            <tr>
+              <td style="color:#475569;">{{ loop.index }}</td>
+              <td>
+                <span class="food-type-badge badge-{{ label }}">{{ label }}</span>
+              </td>
+              <td class="count-cell">{{ count }}</td>
+              <td style="color:#64748b;">
+                {# Percentage = (count / total) * 100, guarded against divide-by-zero #}
+                {% if total_listings > 0 %}
+                  {{ "%.1f"|format(count / total_listings * 100) }}%
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">No listing data available yet.</div>
+    {% endif %}
+  </div>
+
+</div>{# /.dashboard-page #}
+{% endblock %}
+
+
+{% block extra_scripts %}
+{#
+  CHART.JS SETUP — vanilla JavaScript, no framework required.
+
+  INTERVIEW TALKING POINT:
+    "Chart.js needs two things: a <canvas> element and a config object with
+    `type`, `data` (labels + datasets), and `options`. I embed the Python data
+    as JSON using Jinja2's tojson filter so there's no fetch() call needed —
+    the data is already in the page when it loads."
+#}
+<script>
+  // ── Colour palette for the food type chart ──────────────────────────────
+  // Using RGBA with alpha < 1 for bar fill, full opacity for borders.
+  const FOOD_TYPE_COLORS = {
+    cooked:    { bg: "rgba(251, 191, 36,  0.25)", border: "rgba(251, 191, 36,  1)" },
+    packaged:  { bg: "rgba( 34, 211, 238, 0.25)", border: "rgba( 34, 211, 238, 1)" },
+    raw:       { bg: "rgba( 74, 222, 128, 0.25)", border: "rgba( 74, 222, 128, 1)" },
+    bakery:    { bg: "rgba(251, 146,  60, 0.25)", border: "rgba(251, 146,  60, 1)" },
+    other:     { bg: "rgba(148, 163, 184, 0.25)", border: "rgba(148, 163, 184, 1)" },
+  };
+
+  // ── Data injected by Jinja2 ──────────────────────────────────────────────
+  // `tojson` converts Python lists → JS arrays and escapes HTML-unsafe chars.
+  // The result is valid JSON embedded directly in the page.
+  const foodTypeLabels  = {{ food_type_labels | tojson }};
+  const foodTypeCounts  = {{ food_type_counts | tojson }};
+  const timeseriesLabels = {{ timeseries_labels | tojson }};
+  const timeseriesCounts = {{ timeseries_counts | tojson }};
+
+  // ── Chart 1: Food Type — Horizontal Bar ──────────────────────────────────
+  // Horizontal bar (indexAxis: 'y') is easier to read with long category names.
+  const foodTypeCtx = document.getElementById("foodTypeChart");
+  if (foodTypeCtx) {
+    // Map each food type label to its colour config, falling back to grey.
+    const bgColors     = foodTypeLabels.map(l => (FOOD_TYPE_COLORS[l] || FOOD_TYPE_COLORS.other).bg);
+    const borderColors = foodTypeLabels.map(l => (FOOD_TYPE_COLORS[l] || FOOD_TYPE_COLORS.other).border);
+
+    new Chart(foodTypeCtx, {
+      type: "bar",
+      data: {
+        labels: foodTypeLabels,
+        datasets: [{
+          label: "Listings",
+          data: foodTypeCounts,
+          backgroundColor: bgColors,
+          borderColor: borderColors,
+          borderWidth: 2,
+          borderRadius: 6,       // rounded bar corners — a subtle polish touch
+          borderSkipped: false,  // apply borderRadius to all corners
+        }],
+      },
+      options: {
+        indexAxis: "y",          // horizontal bars
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },  // label is clear from axes; legend wastes space
+          tooltip: {
+            backgroundColor: "rgba(15,23,42,0.95)",
+            titleColor: "#94a3b8",
+            bodyColor: "#e2e8f0",
+            borderColor: "rgba(255,255,255,0.1)",
+            borderWidth: 1,
+          },
+        },
+        scales: {
+          x: {
+            grid: { color: "rgba(255,255,255,0.06)" },
+            ticks: {
+              color: "#64748b",
+              // Force integer ticks — listing counts are whole numbers.
+              precision: 0,
+            },
+          },
+          y: {
+            grid: { display: false },
+            ticks: {
+              color: "#94a3b8",
+              font: { weight: "600" },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  // ── Chart 2: Listings per Day — Line chart ───────────────────────────────
+  // A line chart is better than bars for time-series because it emphasises
+  // the *trend* (are listings growing?) rather than individual day counts.
+  const timeseriesCtx = document.getElementById("timeseriesChart");
+  if (timeseriesCtx) {
+    new Chart(timeseriesCtx, {
+      type: "line",
+      data: {
+        labels: timeseriesLabels,
+        datasets: [{
+          label: "Listings created",
+          data: timeseriesCounts,
+          borderColor: "rgba(74, 222, 128, 1)",
+          backgroundColor: "rgba(74, 222, 128, 0.08)",
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: "rgba(74, 222, 128, 1)",
+          fill: true,     // shaded area under the line
+          tension: 0.4,   // slight curve (0 = straight lines, 1 = max curve)
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: "rgba(15,23,42,0.95)",
+            titleColor: "#94a3b8",
+            bodyColor: "#e2e8f0",
+            borderColor: "rgba(255,255,255,0.1)",
+            borderWidth: 1,
+            // Show the day label in the tooltip title, count in body.
+            callbacks: {
+              title: (items) => items[0].label,
+              label: (item) => ` ${item.raw} listing${item.raw === 1 ? "" : "s"}`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { color: "rgba(255,255,255,0.04)" },
+            ticks: {
+              color: "#64748b",
+              maxRotation: 45,
+              // Show every 5th label to avoid crowding on small screens.
+              // Chart.js auto-skips based on available width too.
+              maxTicksLimit: 8,
+            },
+          },
+          y: {
+            grid: { color: "rgba(255,255,255,0.06)" },
+            ticks: {
+              color: "#64748b",
+              precision: 0,  // whole numbers only
+            },
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+  }
+</script>
+{% endblock %}

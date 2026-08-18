@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # ── Revision identifiers ──────────────────────────────────────────────────────
 revision: str = "bdacd13bdd41"
@@ -72,7 +73,7 @@ def upgrade() -> None:
         sa.Column("hashed_password", sa.String(length=255), nullable=False),
         sa.Column(
             "role",
-            sa.Enum("donor", "receiver", "admin", name="userrole"),
+            postgresql.ENUM("donor", "receiver", "admin", name="userrole", create_type=False),
             nullable=False,
         ),
         sa.Column("phone", sa.String(length=20), nullable=True),
@@ -100,7 +101,7 @@ def upgrade() -> None:
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column(
             "food_type",
-            sa.Enum("cooked", "packaged", "raw", "bakery", "other", name="foodtype"),
+            postgresql.ENUM("cooked", "packaged", "raw", "bakery", "other", name="foodtype", create_type=False),
             nullable=False,
         ),
         sa.Column("quantity", sa.Float(), nullable=False),
@@ -114,9 +115,9 @@ def upgrade() -> None:
         sa.Column("image_url", sa.String(length=1000), nullable=True),
         sa.Column(
             "status",
-            sa.Enum(
+            postgresql.ENUM(
                 "available", "claimed", "picked_up", "expired", "cancelled",
-                name="listingstatus"
+                name="listingstatus", create_type=False
             ),
             nullable=False,
             server_default="available",
@@ -155,7 +156,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "status",
-            sa.Enum("pending", "confirmed", "completed", "cancelled", name="claimstatus"),
+            postgresql.ENUM("pending", "confirmed", "completed", "cancelled", name="claimstatus", create_type=False),
             nullable=False,
             server_default="pending",
         ),

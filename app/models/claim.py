@@ -72,7 +72,7 @@ class Claim(Base):
     )
 
     status: Mapped[ClaimStatus] = mapped_column(
-        Enum(ClaimStatus, name="claimstatus"),
+        Enum(ClaimStatus, name="claimstatus", values_callable=lambda obj: [e.value for e in obj]),
         nullable=False,
         default=ClaimStatus.PENDING,
         index=True,

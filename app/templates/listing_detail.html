@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+
+{#
+  app/templates/listing_detail.html — Listing Detail Page
+  =========================================================
+  Shows full information for a single listing.
+
+  BUTTONS DISPLAYED BASED ON CONTEXT:
+    - Anonymous user or donor (not owner): "Claim" → redirects to login
+    - Receiver (not claimed): "Claim" → fetch() to POST /listings/{id}/claim
+    - Receiver (active claim): "Mark Complete" → fetch() to POST /listings/{id}/complete
+    - Donor (owner, listing is claimed): "Mark Complete" → fetch() to POST /listings/{id}/complete
+    - Any other status (expired, picked_up, cancelled): read-only view
+
+  All action buttons use fetch() with the JWT from the meta tag.
+#}
+
+{% block title %}{{ listing.title }} — FoodShare{% endblock %}
+{% block meta_description %}{{ listing.description or 'Food listing on FoodShare: ' + listing.title }}{% endblock %}
+
+{% block content %}
+
+<!-- ── Back navigation ────────────────────────────────────────────────────── -->
+<div style="margin-bottom:1.25rem;">
+  <a href="/browse" class="text-muted" style="font-size:0.9rem; text-decoration:none;">
+    ← Back to Browse
+  </a>
+</div>
+
+<div class="detail-layout">
+
+  <!-- ── Left: Main content ──────────────────────────────────────────────── -->
+  <div>
+
+    <!-- Food image or placeholder -->
+    {% if listing.image_url %}
+      <img
+        src="{{ listing.image_url }}"
+        alt="{{ listing.title }}"
+        class="detail-img"
+      />
+    {% else %}
+      <div class="detail-img-placeholder" aria-hidden="true">
+        {% if listing.food_type.value == 'cooked' %}🍲
+        {% elif listing.food_type.value == 'bakery' %}🥐
+        {% elif listing.food_type.value == 'raw' %}🥬
+        {% elif listing.food_type.value == 'packaged' %}📦
+        {% else %}🍽️{% endif %}
+      </div>
+    {% endif %}
+
+    <!-- Title and status badge -->
+    <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+      <h1 style="margin:0; font-size:1.75rem;">{{ listing.title }}</h1>
+      <span class="badge badge-{{ listing.status.value }}" style="font-size:0.85rem;">
+        {{ listing.status.value | replace('_', ' ') | title }}
+      </span>
+    </div>
+
+    {% if listing.description %}
+      <p style="color:var(--color-text-muted); margin-bottom:1.5rem; font-size:0.95rem; line-height:1.6;">
+        {{ listing.description }}
+      </p>
+    {% endif %}
+
+    <!-- Details table -->
+    <table class="detail-meta-table">
+      <tbody>
+
+        <tr>
+          <td>🏷️ Food Type</td>
+          <td>{{ listing.food_type.value | title }}</td>
+        </tr>
+
+        <tr>
+          <td>⚖️ Quantity</td>
+          <td>{{ listing.quantity }} {{ listing.quantity_unit }}</td>
+        </tr>
+
+        {% if listing.address %}
+        <tr>
+          <td>📍 Pickup Address</td>
+          <td>{{ listing.address }}</td>
+        </tr>
+        {% endif %}
+
+        {% if listing.pickup_window_start %}
+        <tr>
+          <td>🕐 Pickup Window</td>
+          <td>
+            {{ listing.pickup_window_start.strftime('%d %b %Y, %H:%M') }}
+            {% if listing.pickup_window_end %}
+              – {{ listing.pickup_window_end.strftime('%H:%M') }}
+            {% endif %}
+          </td>
+        </tr>
+        {% endif %}
+
+        {% if listing.expiry_time %}
+        <tr>
+          <td>⏰ Food Expires</td>
+          <td style="{% if listing.status.value == 'expired' %}color:var(--color-danger);{% endif %}">
+            {{ listing.expiry_time.strftime('%d %b %Y, %H:%M') }}
+          </td>
+        </tr>
+        {% endif %}
+
+        <tr>
+          <td>👤 Donor</td>
+          <td>{{ listing.donor.name if listing.donor else '—' }}</td>
+        </tr>
+
+        <tr>
+          <td>📅 Posted</td>
+          <td>{{ listing.created_at.strftime('%d %b %Y, %H:%M') }}</td>
+        </tr>
+
+      </tbody>
+    </table>
+
+  </div>
+
+  <!-- ── Right: Sidebar (actions) ────────────────────────────────────────── -->
+  <aside class="detail-sidebar">
+
+    <!-- ── Claim Card ───────────────────────────────────────────────────── -->
+    <div class="card" id="action-card">
+
+      <!-- Feedback message -->
+      <div id="action-msg" class="fetch-msg" aria-live="polite" style="margin-bottom:0.75rem;"></div>
+
+      {% if listing.status.value == 'available' %}
+        <!--
+          AVAILABLE: show claim button (for receivers) or a read-only note (for donors).
+        -->
+        {% if not user %}
+          <!-- Guest: redirect to login to claim -->
+          <h3>🥘 Get This Food</h3>
+          <p style="font-size:0.9rem; color:var(--color-text-muted); margin-bottom:1rem;">
+            Create a free account or log in to claim this listing.
+          </p>
+          <a href="/login?msg=Please+log+in+to+claim+food"
+             class="btn btn-secondary" style="width:100%;" id="claim-login-btn">
+            Log In to Claim
+          </a>
+
+        {% elif user.role.value == 'receiver' %}
+          <!-- Logged-in receiver: claim via fetch() -->
+          <h3>🥘 Claim This Food</h3>
+          <div class="form-group">
+            <label class="form-label" for="claim-notes">Note for Donor (optional)</label>
+            <textarea id="claim-notes" class="form-textarea" rows="2"
+                      placeholder="e.g. I'll arrive at 4 PM"></textarea>
+          </div>
+          <button id="claim-btn" class="btn btn-secondary" style="width:100%;"
+                  onclick="claimListing()">
+            ✅ Claim Listing
+          </button>
+
+        {% elif is_donor_of_listing %}
+          <!-- Donor viewing their own listing -->
+          <h3>📋 Your Listing</h3>
+          <p style="font-size:0.9rem; color:var(--color-text-muted); margin-bottom:1rem;">
+            This is your listing. Receivers can see and claim it.
+          </p>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button class="btn btn-outline" style="flex:1;" onclick="toggleEditModal()">✏️ Edit</button>
+            <button class="btn btn-danger" style="flex:1;" onclick="cancelListingDetail({{ listing.id }})">🗑️ Cancel</button>
+          </div>
+
+          <!-- Edit Listing Modal -->
+          <div id="edit-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+            <div style="background:#fff; padding:1.5rem; border-radius:12px; max-width:450px; width:90%; box-shadow:var(--shadow-lg);">
+              <h3 style="margin-bottom:1rem;">Edit Listing</h3>
+              <div class="form-group">
+                <label class="form-label" for="edit-title">Title</label>
+                <input type="text" id="edit-title" class="form-input" value="{{ listing.title }}" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="edit-quantity">Quantity</label>
+                <input type="number" id="edit-quantity" class="form-input" value="{{ listing.quantity }}" step="any" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="edit-address">Address</label>
+                <input type="text" id="edit-address" class="form-input" value="{{ listing.address or '' }}" />
+              </div>
+              <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem;">
+                <button class="btn btn-outline" onclick="toggleEditModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveEditListing({{ listing.id }})">Save Changes</button>
+              </div>
+            </div>
+          </div>
+
+        {% else %}
+          <!-- Another donor browsing -->
+          <p style="font-size:0.9rem; color:var(--color-text-muted);">
+            Only receivers can claim listings.
+          </p>
+        {% endif %}
+
+      {% elif listing.status.value == 'claimed' %}
+        <!--
+          CLAIMED: show "Mark Complete" button if current user is the donor (owner)
+          or the receiver who claimed it. Otherwise, show "Already claimed".
+        -->
+        {% if is_donor_of_listing and donor_active_claim %}
+          <h3>✅ Mark as Picked Up</h3>
+          <p style="font-size:0.9rem; color:var(--color-text-muted); margin-bottom:1rem;">
+            Confirm that the receiver has collected this food.
+          </p>
+          <button id="complete-btn" class="btn btn-primary" style="width:100%;"
+                  onclick="completeListing()">
+            🏁 Mark Complete
+          </button>
+
+        {% elif user and user.role.value == 'receiver' and active_claim %}
+          <h3>✅ Mark as Picked Up</h3>
+          <p style="font-size:0.9rem; color:var(--color-text-muted); margin-bottom:1rem;">
+            Confirm you've collected this food.
+          </p>
+          <button id="complete-btn" class="btn btn-primary" style="width:100%;"
+                  onclick="completeListing()">
+            🏁 Mark Complete
+          </button>
+
+        {% else %}
+          <div class="badge badge-claimed" style="display:block; text-align:center; padding:0.6rem;">
+            Already Claimed
+          </div>
+          <p style="font-size:0.85rem; color:var(--color-text-muted); margin-top:0.75rem; text-align:center;">
+            This listing has been claimed by another receiver.
+          </p>
+        {% endif %}
+
+      {% elif listing.status.value == 'picked_up' %}
+        <div class="badge badge-picked_up" style="display:block; text-align:center; padding:0.6rem;">
+          ✓ Picked Up
+        </div>
+        <p style="font-size:0.85rem; color:var(--color-text-muted); margin-top:0.75rem; text-align:center;">
+          This food has been successfully collected. 🎉
+        </p>
+
+      {% elif listing.status.value == 'expired' %}
+        <div class="badge badge-expired" style="display:block; text-align:center; padding:0.6rem;">
+          Expired
+        </div>
+        <p style="font-size:0.85rem; color:var(--color-text-muted); margin-top:0.75rem; text-align:center;">
+          This listing's food has expired and is no longer available.
+        </p>
+
+      {% elif listing.status.value == 'cancelled' %}
+        <div class="badge badge-cancelled" style="display:block; text-align:center; padding:0.6rem;">
+          Cancelled
+        </div>
+        <p style="font-size:0.85rem; color:var(--color-text-muted); margin-top:0.75rem; text-align:center;">
+          This listing was cancelled by the donor.
+        </p>
+      {% endif %}
+
+    </div>
+
+    <!-- ── Quick stats ──────────────────────────────────────────────────── -->
+    <div class="card" style="margin-top:0;">
+      <h3 style="font-size:0.9rem; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:0.04em;">
+        Quick Info
+      </h3>
+      <div style="font-size:0.9rem; display:flex; flex-direction:column; gap:0.5rem; margin-top:0.5rem;">
+        <div>🏷️ <strong>{{ listing.food_type.value | title }}</strong></div>
+        <div>⚖️ <strong>{{ listing.quantity }} {{ listing.quantity_unit }}</strong></div>
+        {% if listing.address %}
+          <div>📍 {{ listing.address }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+  </aside>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const LISTING_ID = {{ listing.id }};
+  const token = getToken();
+
+  // ── Claim a listing ──────────────────────────────────────────────────────────
+  async function claimListing() {
+    const btn = document.getElementById('claim-btn');
+    const msg = document.getElementById('action-msg');
+    const notes = document.getElementById('claim-notes')?.value.trim() || '';
+
+    if (!token) {
+      window.location.href = '/login?msg=Please+log+in+to+claim+food';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Claiming…';
+
+    try {
+      const resp = await fetch(`/listings/${LISTING_ID}/claim`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ notes }),
+      });
+
+      const data = await resp.json();
+
+      if (resp.status === 201) {
+        showMsg(msg, '✅ Claimed! You can now arrange pickup with the donor.', 'success');
+        btn.textContent = 'Claimed ✓';
+        btn.style.background = 'var(--color-success)';
+        // Reload after short delay so the status badge updates
+        setTimeout(() => window.location.reload(), 1500);
+
+      } else if (resp.status === 409) {
+        showMsg(msg, '⚠️ Someone else just claimed this listing.', 'error');
+        btn.textContent = 'Unavailable';
+        btn.disabled = true;
+        setTimeout(() => window.location.reload(), 2000);
+
+      } else if (resp.status === 401) {
+        window.location.href = '/login?msg=Please+log+in+to+claim+food';
+
+      } else {
+        const detail = typeof data.detail === 'string' ? data.detail : 'Failed to claim.';
+        showMsg(msg, '❌ ' + detail, 'error');
+        btn.disabled = false;
+        btn.textContent = '✅ Claim Listing';
+      }
+    } catch (err) {
+      showMsg(msg, '❌ Network error. Please try again.', 'error');
+      btn.disabled = false;
+      btn.textContent = '✅ Claim Listing';
+    }
+  }
+
+  // ── Mark as complete (donor or receiver) ──────────────────────────────────────
+  async function completeListing() {
+    const btn = document.getElementById('complete-btn');
+    const msg = document.getElementById('action-msg');
+
+    if (!token) {
+      window.location.href = '/login';
+      return;
+    }
+
+    if (!confirm('Mark this listing as completed? This confirms the food has been picked up.')) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Completing…';
+
+    try {
+      const resp = await fetch(`/listings/${LISTING_ID}/complete`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+
+      const data = await resp.json();
+
+      if (resp.ok) {
+        showMsg(msg, '🎉 Marked complete! Great job reducing food waste.', 'success');
+        btn.textContent = 'Done ✓';
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        const detail = typeof data.detail === 'string' ? data.detail : 'Failed to complete.';
+        showMsg(msg, '❌ ' + detail, 'error');
+        btn.disabled = false;
+        btn.textContent = '🏁 Mark Complete';
+      }
+    } catch (err) {
+      showMsg(msg, '❌ Network error. Please try again.', 'error');
+      btn.disabled = false;
+      btn.textContent = '🏁 Mark Complete';
+    }
+  }
+
+  function toggleEditModal() {
+    const modal = document.getElementById('edit-modal');
+    if (modal) {
+      modal.style.display = modal.style.display === 'none' || !modal.style.display ? 'flex' : 'none';
+    }
+  }
+
+  async function saveEditListing(id) {
+    const title = document.getElementById('edit-title').value.trim();
+    const quantity = parseFloat(document.getElementById('edit-quantity').value);
+    const address = document.getElementById('edit-address').value.trim();
+    const msg = document.getElementById('action-msg');
+
+    if (!token) return;
+
+    try {
+      const resp = await fetch(`/listings/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title, quantity, address }),
+      });
+
+      if (resp.ok) {
+        showMsg(msg, '✅ Listing updated!', 'success');
+        toggleEditModal();
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        const data = await resp.json();
+        alert('Error: ' + (data.detail || 'Could not update listing'));
+      }
+    } catch (err) {
+      alert('Network error while updating.');
+    }
+  }
+
+  async function cancelListingDetail(id) {
+    if (!confirm('Are you sure you want to cancel this listing?')) return;
+    try {
+      const resp = await fetch(`/listings/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+      if (resp.status === 204) {
+        window.location.reload();
+      } else {
+        const data = await resp.json();
+        alert('Error: ' + (data.detail || 'Could not cancel listing'));
+      }
+    } catch (err) {
+      alert('Network error while cancelling.');
+    }
+  }
+
+  function showMsg(el, text, type) {
+    el.textContent = text;
+    el.className = 'fetch-msg visible ' + type;
+  }
+</script>
+{% endblock %}

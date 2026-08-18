@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{#
+  app/templates/auth/login.html — Login Form
+  ============================================
+  Submits to POST /pages/login (NOT /auth/login directly).
+
+  WHY POST /pages/login instead of /auth/login?
+    - POST /auth/login returns JSON with the JWT token.
+    - A plain HTML form follows the redirect/response as a page load.
+    - We can't set an httpOnly cookie from JS (that's the whole point of httpOnly).
+    - Solution: POST /pages/login is a server-side handler that:
+        1. Verifies credentials (same logic as /auth/login)
+        2. Sets the httpOnly cookie via Set-Cookie header
+        3. Redirects the browser to the appropriate dashboard
+    - This way the browser makes a normal form POST, the server sets the cookie,
+      and the browser follows the redirect — pure server-side, no JS needed.
+
+  NOTE: This form uses a plain <form action> POST, not fetch().
+    Why? Because we WANT the browser to follow the redirect that the server
+    sends back (302 → /dashboard). With fetch(), we'd have to manually handle
+    the redirect, which is more complex for no benefit here.
+#}
+
+{% block title %}Log In — FoodShare{% endblock %}
+{% block meta_description %}Log in to your FoodShare account.{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+  <div class="auth-box">
+    <h1>Welcome back</h1>
+    <p class="auth-subtitle">Log in to your FoodShare account.</p>
+
+    <!-- Query-param flash message (e.g., after signup or session expiry) -->
+    {% if msg %}
+      <div class="form-msg visible {% if 'created' in msg or 'success' in msg %}success{% else %}error{% endif %}"
+           role="alert" id="login-flash">
+        {{ msg }}
+      </div>
+    {% endif %}
+
+    <!--
+      Plain HTML form POST — no fetch() here.
+      WHY? The server needs to set an httpOnly cookie via the Set-Cookie
+      response header. fetch() with credentials:'include' would need CORS
+      setup; a plain form POST is simpler and semantically correct for
+      a server-rendered login flow.
+    -->
+    <form id="login-form" method="POST" action="/login">
+      <div class="form-group">
+        <label class="form-label" for="email">Email Address</label>
+        <input type="email" id="email" name="email" class="form-input"
+               placeholder="you@example.com" required autocomplete="email" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <input type="password" id="password" name="password" class="form-input"
+               placeholder="Your password" required autocomplete="current-password" />
+      </div>
+
+      <button type="submit" id="login-btn" class="btn btn-primary" style="width:100%; margin-top:0.5rem;">
+        Log In
+      </button>
+    </form>
+
+    <div class="form-divider">
+      Don't have an account?
+      <a href="/signup">Sign up free →</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  /*
+   * Minimal JS: just add a loading state to the button on submit.
+   * The actual form POST is handled natively by the browser.
+   */
+  document.getElementById('login-form').addEventListener('submit', (e) => {
+    const btn = document.getElementById('login-btn');
+    btn.disabled = true;
+    btn.textContent = 'Logging in…';
+  });
+</script>
+{% endblock %}

@@ -2,16 +2,25 @@
 <!--
   app/templates/base.html — Master Layout Template
   =================================================
-  All other Jinja2 templates will extend this file using:
-      {% extends "base.html" %}
+  All other Jinja2 templates extend this file using:
+       extends base.html
 
-  Jinja2's template inheritance works like this:
-    - base.html defines "blocks" ({% block content %}{% endblock %})
+  Jinja2's template inheritance:
+    - base.html defines "blocks" (block content ... endblock)
     - Child templates fill in those blocks
-    - Everything outside a block in base.html is shared across all pages
+    - Everything outside a block is shared across all pages (DRY principle)
 
-  This means the <head>, navbar, and footer are defined once here and
-  reused everywhere — DRY principle applied to HTML.
+  NAVIGATION:
+    The nav renders differently based on whether `user` is in the template
+    context. Page routes always pass `user` (or None); this lets the nav
+    show "Dashboard/Logout" for logged-in users and "Sign Up/Login" for guests.
+
+  JWT + FETCH() IN TEMPLATES:
+    For fetch() calls to the JSON APIs, JS needs the token. Since it's in an
+    httpOnly cookie (JS cannot read it), we pass the raw token string from the
+    server into a <meta> tag. The getToken() helper reads it.
+    This is safe because we're reading the cookie *server-side* and embedding
+    it in HTML — XSS is a separate concern mitigated by output escaping.
 -->
 <html lang="en">
 <head>
@@ -19,11 +28,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!-- SEO: child templates can override this -->
-    <title>{% block title %}Food Waste Redistribution Platform{% endblock %}</title>
+    <title>{% block title %}AaharSetu — Reduce Waste, Feed Communities{% endblock %}</title>
     <meta name="description" content="{% block meta_description %}Connecting food donors with those in need — reducing waste, fighting hunger.{% endblock %}" />
+
+    <!-- Google Fonts — Inter for clean, professional typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
     <!-- Global stylesheet -->
     <link rel="stylesheet" href="{{ url_for('static', path='css/main.css') }}" />
+
+    <!--
+      TOKEN META TAG:
+      The JWT is stored in an httpOnly cookie (server sets it; JS cannot read it).
+      To allow fetch() calls to the JSON API to include Authorization: Bearer <token>,
+      we embed the token in a meta tag server-side. The JS helper getToken() reads it.
+
+      Note: `token` is only set in contexts where the user is authenticated.
+      Templates that don't pass `token` will just get an empty string here.
+    -->
+    <meta name="api-token" content="{{ token | default('') }}" />
 
     <!-- Per-page extra styles -->
     {% block extra_head %}{% endblock %}
@@ -31,24 +56,52 @@
 <body>
     <!-- ── Navigation ──────────────────────────────────────────────────── -->
     <nav class="navbar">
-        <a class="navbar-brand" href="/">🌱 FoodShare</a>
+        <a class="navbar-brand" href="/">🌱 AaharSetu</a>
+
         <ul class="navbar-links">
-            <li><a href="/listings">Browse Food</a></li>
-            <li><a href="/auth/signup">Sign Up</a></li>
-            <li><a href="/auth/login">Log In</a></li>
+            <li><a href="/browse">Browse Food</a></li>
+
+            {% if user %}
+                <!--
+                  Server renders nav based on user role. No JS needed here —
+                  Jinja2 has the user object because the page route passed it.
+                -->
+                {% if user.role.value == 'donor' %}
+                    <li><a href="/dashboard">My Dashboard</a></li>
+                {% elif user.role.value == 'admin' %}
+                    <li><a href="/admin/dashboard">Admin</a></li>
+                {% endif %}
+                <li><a href="/notifications-page">🔔 Notifications</a></li>
+
+                <li class="navbar-user">
+                    <span class="navbar-user-name">👤 {{ user.name }}</span>
+                    <a href="/logout" class="btn btn-outline" style="padding:0.35rem 0.85rem; font-size:0.85rem; border-color:rgba(255,255,255,0.5); color:#fff;">
+                        Log out
+                    </a>
+                </li>
+            {% else %}
+                <li><a href="/signup">Sign Up</a></li>
+                <li><a href="/login">Log In</a></li>
+            {% endif %}
         </ul>
     </nav>
 
-    <!-- ── Flash Messages (success/error notifications) ────────────────── -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }}">{{ message }}</div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
+    <!-- ── Query param flash messages (instead of Flask's flash()) ─────── -->
+    <!--
+      Flask's get_flashed_messages() doesn't exist in FastAPI/Jinja2.
+      Instead, page routes pass a `msg` query param (e.g., /login?msg=...).
+      The login page handles its own msg, but for cross-page messages we
+      check a `page_msg` context variable passed by the route.
+    -->
+    {% if page_msg %}
+        <div class="alert alert-{{ page_msg_type | default('info') }}" role="alert">
+            {{ page_msg }}
+        </div>
+    {% endif %}
 
     <!-- ── Page Content ─────────────────────────────────────────────────── -->
+    {% block full_width %}{% endblock %}
+
     <main class="main-content">
         {% block content %}
         <!-- Child templates put their content here -->
@@ -57,8 +110,29 @@
 
     <!-- ── Footer ───────────────────────────────────────────────────────── -->
     <footer class="footer">
-        <p>🌍 Food Waste Redistribution Platform — Built with FastAPI & ❤️</p>
+        <p>🌍 AaharSetu — Reducing Food Waste, One Meal at a Time · Built by Abhigyan with ❤️</p>
     </footer>
+
+    <!--
+      getToken() — JS helper to read the JWT from the meta tag.
+
+      WHY EMBED IN A META TAG (not a JS variable in a <script> block)?
+        A <meta> tag is a well-established HTML pattern for passing server
+        data to JS (used by Rails, Django, etc.). Putting it in a <script>
+        block with var token = "..." works too, but meta is more semantic
+        and doesn't pollute the global JS namespace.
+
+      USAGE IN TEMPLATES:
+        const token = getToken();
+        fetch('/listings/', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+    -->
+    <script>
+      function getToken() {
+        return document.querySelector('meta[name="api-token"]')?.content || '';
+      }
+    </script>
 
     <!-- Per-page JavaScript -->
     {% block extra_scripts %}{% endblock %}

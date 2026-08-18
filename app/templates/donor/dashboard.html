@@ -1,0 +1,324 @@
+{% extends "base.html" %}
+
+{#
+  app/templates/donor/dashboard.html — Donor Dashboard
+  ======================================================
+  Shows:
+    1. A table of the donor's own listings with status badges
+    2. A "Create New Listing" form (sticky sidebar on desktop)
+
+  MULTIPART FORM vs. JSON:
+    The create listing form uses multipart/form-data (not JSON) because
+    it includes an optional image file upload. HTTP can't mix a file
+    (binary stream) with a JSON body in a single request. FormData handles
+    both text fields and file parts in one multipart request.
+
+  The API endpoint is POST /listings/ which expects multipart/form-data
+  and is guarded by DonorUser (requires auth + donor role). We send the
+  JWT from the httpOnly cookie via the Authorization header that getToken() reads.
+#}
+
+{% block title %}My Dashboard — FoodShare{% endblock %}
+{% block meta_description %}Manage your food listings and create new ones.{% endblock %}
+
+{% block content %}
+<div class="dashboard-greeting">
+  <h1>👋 Hello, {{ user.name }}</h1>
+  <p class="text-muted">
+    You've posted {{ listings | length }} listing{{ 's' if listings | length != 1 else '' }}.
+  </p>
+</div>
+
+<div class="dashboard-layout">
+
+  <!-- ── Left: My Listings Table ──────────────────────────────────────── -->
+  <section aria-labelledby="listings-heading">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+      <h2 id="listings-heading" style="margin:0;">📋 My Listings</h2>
+    </div>
+
+    {% if listings %}
+      <div style="overflow-x:auto; background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-lg);">
+        <table class="listings-table" id="my-listings-table">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Food Type</th>
+              <th>Quantity</th>
+              <th>Expires</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for listing in listings %}
+            <tr>
+              <td>
+                <a href="/listings/{{ listing.id }}" style="font-weight:600; color:var(--color-primary);">
+                  {{ listing.title }}
+                </a>
+              </td>
+              <td>
+                <span class="badge" style="background:var(--color-bg); color:var(--color-primary); border:1px solid var(--color-border);">
+                  {{ listing.food_type.value | title }}
+                </span>
+              </td>
+              <td>{{ listing.quantity }} {{ listing.quantity_unit }}</td>
+              <td class="text-muted" style="font-size:0.85rem;">
+                {# Format expiry date, or show "—" if not set #}
+                {% if listing.expiry_time %}
+                  {{ listing.expiry_time.strftime('%d %b, %H:%M') }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td>
+                <!--
+                  Status badges: CSS class is badge-<status_value>
+                  e.g., badge-available, badge-claimed, badge-expired
+                  Defined in main.css under "Status Badges"
+                -->
+                <span class="badge badge-{{ listing.status.value }}">
+                  {{ listing.status.value | replace('_', ' ') | title }}
+                </span>
+              </td>
+              <td>
+                <a href="/listings/{{ listing.id }}" class="btn btn-outline"
+                   style="padding:0.3rem 0.75rem; font-size:0.8rem;">
+                  View
+                </a>
+                {% if listing.status.value == 'available' %}
+                  <a href="/listings/{{ listing.id }}" class="btn btn-outline"
+                     style="padding:0.3rem 0.75rem; font-size:0.8rem; margin-left:0.3rem;">
+                    Edit
+                  </a>
+                  <button
+                    class="btn btn-danger"
+                    style="padding:0.3rem 0.75rem; font-size:0.8rem; margin-left:0.3rem;"
+                    onclick="cancelListing({{ listing.id }}, this)"
+                    id="cancel-btn-{{ listing.id }}">
+                    Cancel
+                  </button>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state" style="background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-lg);">
+        <div class="empty-icon">📭</div>
+        <p><strong>No listings yet.</strong></p>
+        <p class="text-muted">Use the form on the right to create your first listing.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <!-- ── Right: Create Listing Form ───────────────────────────────────── -->
+  <aside>
+    <div class="create-panel">
+      <h2>➕ New Listing</h2>
+
+      <!-- Inline feedback for the create form -->
+      <div id="create-msg" class="fetch-msg" role="alert" aria-live="polite"></div>
+
+      <!--
+        This form submits via fetch() as multipart/form-data.
+        WHY NOT action="/listings/"?
+          A plain form POST can't set the Authorization: Bearer <token> header.
+          We need the header because POST /listings/ is a protected JSON API endpoint.
+          fetch() lets us add custom headers and handle the response.
+      -->
+      <form id="create-form" novalidate enctype="multipart/form-data">
+
+        <div class="form-group">
+          <label class="form-label" for="title">Title *</label>
+          <input type="text" id="title" name="title" class="form-input"
+                 placeholder="e.g. Leftover biryani (serves 6)" required minlength="3" maxlength="200" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="food_type">Food Type *</label>
+          <select id="food_type" name="food_type" class="form-select" required>
+            <option value="">— Select type —</option>
+            {% for ft in food_types %}
+              <option value="{{ ft }}">{{ ft | title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="quantity">Quantity *</label>
+            <input type="number" id="quantity" name="quantity" class="form-input"
+                   placeholder="e.g. 5" min="0.1" step="any" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="quantity_unit">Unit *</label>
+            <input type="text" id="quantity_unit" name="quantity_unit" class="form-input"
+                   placeholder="portions / kg / packs" required maxlength="50" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="description">Description</label>
+          <textarea id="description" name="description" class="form-textarea"
+                    rows="2" placeholder="Any details about the food…"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="address">Pickup Address</label>
+          <input type="text" id="address" name="address" class="form-input"
+                 placeholder="Street, City" maxlength="500" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="pickup_window_start">Pickup From</label>
+            <input type="datetime-local" id="pickup_window_start" name="pickup_window_start"
+                   class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pickup_window_end">Pickup Until</label>
+            <input type="datetime-local" id="pickup_window_end" name="pickup_window_end"
+                   class="form-input" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="expiry_time">Food Expires At</label>
+          <input type="datetime-local" id="expiry_time" name="expiry_time" class="form-input" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="image">Photo <span class="text-muted">(jpg/png, max 5 MB)</span></label>
+          <input type="file" id="image" name="image" class="form-input"
+                 accept="image/jpeg,image/png" style="padding:0.4rem;" />
+        </div>
+
+        <button type="submit" id="create-btn" class="btn btn-primary" style="width:100%; margin-top:0.25rem;">
+          📤 Post Listing
+        </button>
+      </form>
+    </div>
+  </aside>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // ── Cancel a listing (soft-delete → status = cancelled) ─────────────────────
+  async function cancelListing(listingId, btn) {
+    if (!confirm('Cancel this listing? Receivers will no longer see it.')) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Cancelling…';
+
+    try {
+      const resp = await fetch(`/listings/${listingId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + getToken() },
+      });
+
+      if (resp.status === 204) {
+        // Soft-delete succeeded — reload page to reflect updated status
+        window.location.reload();
+      } else {
+        const data = await resp.json();
+        alert('Error: ' + (data.detail || 'Could not cancel listing.'));
+        btn.disabled = false;
+        btn.textContent = 'Cancel';
+      }
+    } catch (err) {
+      alert('Network error. Please try again.');
+      btn.disabled = false;
+      btn.textContent = 'Cancel';
+    }
+  }
+
+
+  // ── Create Listing Form ───────────────────────────────────────────────────────
+  /*
+   * WHY FormData (not JSON.stringify)?
+   *   POST /listings/ accepts multipart/form-data because it includes an
+   *   optional image file. You cannot mix file uploads with a JSON body.
+   *   FormData automatically sets the correct Content-Type boundary header.
+   *
+   *   IMPORTANT: Do NOT set Content-Type manually when using FormData —
+   *   the browser sets it with the multipart boundary automatically.
+   */
+  document.getElementById('create-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const btn = document.getElementById('create-btn');
+    const msg = document.getElementById('create-msg');
+
+    // Basic client-side validation
+    const title = document.getElementById('title').value.trim();
+    const foodType = document.getElementById('food_type').value;
+    const quantity = document.getElementById('quantity').value;
+    const unit = document.getElementById('quantity_unit').value.trim();
+
+    if (!title || !foodType || !quantity || !unit) {
+      showMsg(msg, '❌ Title, food type, quantity and unit are required.', 'error');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Posting…';
+    hideMsg(msg);
+
+    // Build FormData — collects all named form fields + the file
+    const form = document.getElementById('create-form');
+    const formData = new FormData(form);
+
+    // Remove empty optional fields so the API doesn't receive empty strings
+    ['description', 'address', 'pickup_window_start', 'pickup_window_end', 'expiry_time'].forEach(field => {
+      if (!formData.get(field)) formData.delete(field);
+    });
+
+    // Remove empty image field — the API treats a missing `image` as "use placeholder"
+    const imageFile = document.getElementById('image').files[0];
+    if (!imageFile) formData.delete('image');
+
+    try {
+      const resp = await fetch('/listings/', {
+        method: 'POST',
+        // DO NOT set Content-Type: browser sets it automatically for FormData
+        headers: { 'Authorization': 'Bearer ' + getToken() },
+        body: formData,
+      });
+
+      const data = await resp.json();
+
+      if (resp.ok) {
+        showMsg(msg, '✅ Listing created! Refreshing…', 'success');
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        // FastAPI validation errors have `detail` as an array of objects
+        let detail = data.detail;
+        if (Array.isArray(detail)) {
+          detail = detail.map(e => e.msg || JSON.stringify(e)).join('; ');
+        }
+        showMsg(msg, '❌ ' + (detail || 'Failed to create listing.'), 'error');
+        btn.disabled = false;
+        btn.textContent = '📤 Post Listing';
+      }
+    } catch (err) {
+      showMsg(msg, '❌ Network error. Please try again.', 'error');
+      btn.disabled = false;
+      btn.textContent = '📤 Post Listing';
+    }
+  });
+
+  function showMsg(el, text, type) {
+    el.textContent = text;
+    el.className = 'fetch-msg visible ' + type;
+  }
+  function hideMsg(el) {
+    el.className = 'fetch-msg';
+  }
+</script>
+{% endblock %}

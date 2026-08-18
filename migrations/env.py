@@ -61,7 +61,12 @@ if config.config_file_name is not None:
 
 # Override the sqlalchemy.url in alembic.ini with our pydantic-settings value.
 # This way we have ONE source of truth (.env) instead of duplicating the URL.
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+#
+# NOTE: configparser uses % for interpolation (e.g. %(here)s), so any literal
+# % in the value — such as %40 (URL-encoded @) in a password — must be escaped
+# as %%. We do that here so URLs like postgresql+asyncpg://user:p%40ss@host/db
+# are stored correctly and don't raise ValueError at parse time.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 # target_metadata tells autogenerate what schema to compare against.
 # Point it at Base.metadata so Alembic sees all your models.

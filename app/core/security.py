@@ -83,6 +83,40 @@ def create_access_token(subject: Any, expires_delta: timedelta | None = None) ->
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
+def create_refresh_token(subject: Any, expires_delta: timedelta | None = None) -> str:
+    """
+    Create a signed JWT refresh token.
+
+    WHY A SEPARATE FUNCTION (not just a long-lived access token)?
+      Refresh tokens exist to limit damage if an access token leaks:
+        - Access token: short-lived (30 min), used on EVERY request.
+          If intercepted, the attacker has 30 minutes — that's acceptable.
+        - Refresh token: long-lived (7 days), sent ONLY to /auth/refresh.
+          Fewer requests = fewer opportunities to intercept.
+
+    The `"type": "refresh"` claim is a custom claim we add so the server
+    can reject a refresh token if someone tries to use it as an access token.
+    Standard JWT libraries don't enforce this automatically — we must check
+    it manually in a /auth/refresh endpoint (Phase 3+).
+
+    Args:
+        subject: The user's ID — same as access token.
+        expires_delta: Override TTL; defaults to settings.REFRESH_TOKEN_EXPIRE_DAYS.
+    """
+    expire = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    )
+    payload = {
+        "sub": str(subject),
+        "exp": expire,
+        # Custom claim: distinguishes this token from an access token.
+        # A /auth/refresh endpoint should verify this is "refresh" before issuing
+        # a new access token.
+        "type": "refresh",
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
 def decode_access_token(token: str) -> dict | None:
     """
     Decode and verify a JWT token.

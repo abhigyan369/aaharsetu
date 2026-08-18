@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+
+{#
+  app/templates/browse.html — Receiver Browse Page
+  ==================================================
+  Lists all available food listings with:
+    - Filter bar (food type, sort order) — submits as a plain GET form
+      so filters are bookmarkable/shareable via URL query params
+    - Listing cards grid — responsive auto-fill grid
+    - "Claim" button per card — fetch() to POST /listings/{id}/claim
+
+  FILTER APPROACH — plain GET form (no JS required for filtering):
+    <form method="GET" action="/browse"> sends ?food_type=cooked&sort=expiry
+    The page route reads these query params and applies them server-side.
+    This is the simplest approach: no JS state management, fully shareable URLs,
+    works with browser Back button naturally.
+
+  CLAIM FLOW — fetch() (minimal JS):
+    Claiming requires auth (receiver role). If the user isn't logged in,
+    we redirect them to /login instead of making the API call.
+#}
+
+{% block title %}Browse Food — FoodShare{% endblock %}
+{% block meta_description %}Browse available food listings near you. Filter by type and claim what you need.{% endblock %}
+
+{% block content %}
+
+<!-- ── Page Header ─────────────────────────────────────────────────────────── -->
+<div class="browse-header">
+  <div>
+    <h1 style="margin-bottom:0.25rem;">🥘 Available Food</h1>
+    <p class="text-muted">
+      {{ listings | length }} listing{{ 's' if listings | length != 1 else '' }} available right now
+    </p>
+  </div>
+
+  {% if user and user.role.value == 'donor' %}
+    <a href="/dashboard" class="btn btn-outline">← My Dashboard</a>
+  {% endif %}
+</div>
+
+<!-- ── Filter Bar ──────────────────────────────────────────────────────────── -->
+<!--
+  Plain GET form — filters are applied server-side by the /browse route.
+  No JS needed. The browser sends the form values as URL query params.
+-->
+<form id="filter-form" method="GET" action="/browse" class="filter-bar" role="search">
+
+  <div class="filter-group">
+    <label for="food_type_filter">Food Type</label>
+    <select id="food_type_filter" name="food_type" onchange="this.form.submit()">
+      <option value="">All Types</option>
+      {% for ft in food_types %}
+        <option value="{{ ft }}" {% if ft == selected_food_type %}selected{% endif %}>
+          {{ ft | title }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="filter-group">
+    <label for="sort_filter">Sort By</label>
+    <select id="sort_filter" name="sort" onchange="this.form.submit()">
+      <option value="expiry" {% if selected_sort == 'expiry' %}selected{% endif %}>Expiring Soonest</option>
+      <option value="newest" {% if selected_sort == 'newest' %}selected{% endif %}>Newest First</option>
+    </select>
+  </div>
+
+  <!-- Fallback submit button for users who have JS disabled -->
+  <div class="filter-group">
+    <label style="visibility:hidden;">Go</label>
+    <button type="submit" class="btn btn-outline" style="padding:0.5rem 1rem;">Apply</button>
+  </div>
+
+  {% if selected_food_type or selected_sort != 'expiry' %}
+    <div class="filter-group">
+      <label style="visibility:hidden;">Clear</label>
+      <a href="/browse" class="btn btn-outline" style="padding:0.5rem 1rem; color:var(--color-text-muted);">
+        Clear Filters
+      </a>
+    </div>
+  {% endif %}
+
+</form>
+
+<!-- ── Listings Grid ───────────────────────────────────────────────────────── -->
+{% if listings %}
+  <div class="grid-auto" id="listings-grid">
+    {% for listing in listings %}
+    <article class="listing-card" id="listing-card-{{ listing.id }}">
+
+      <!-- Food image or placeholder -->
+      {% if listing.image_url %}
+        <img
+          src="{{ listing.image_url }}"
+          alt="{{ listing.title }}"
+          class="listing-card-img"
+          loading="lazy"
+        />
+      {% else %}
+        <div class="listing-card-img-placeholder" aria-hidden="true">
+          {% if listing.food_type.value == 'cooked' %}🍲
+          {% elif listing.food_type.value == 'bakery' %}🥐
+          {% elif listing.food_type.value == 'raw' %}🥬
+          {% elif listing.food_type.value == 'packaged' %}📦
+          {% else %}🍽️{% endif %}
+        </div>
+      {% endif %}
+
+      <div class="listing-card-body">
+        <div>
+          <a href="/listings/{{ listing.id }}" class="listing-card-title">
+            {{ listing.title }}
+          </a>
+
+          <div class="listing-card-meta">
+            <span>
+              🏷️ {{ listing.food_type.value | title }}
+              &nbsp;·&nbsp; {{ listing.quantity }} {{ listing.quantity_unit }}
+            </span>
+            {% if listing.address %}
+              <span>📍 {{ listing.address }}</span>
+            {% endif %}
+            {% if listing.expiry_time %}
+              <span>⏰ Expires {{ listing.expiry_time.strftime('%d %b, %H:%M') }}</span>
+            {% endif %}
+            {% if listing.pickup_window_start %}
+              <span>🚪 Pickup from {{ listing.pickup_window_start.strftime('%d %b, %H:%M') }}</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="listing-card-footer">
+          <span class="badge badge-{{ listing.status.value }}">
+            {{ listing.status.value | replace('_', ' ') | title }}
+          </span>
+
+          <!-- Claim button — different state based on auth / role -->
+          {% if not user %}
+            <!-- Not logged in: redirect to login -->
+            <a href="/login?msg=Please+log+in+to+claim+food"
+               class="btn btn-secondary" style="padding:0.4rem 1rem; font-size:0.85rem;">
+              Claim
+            </a>
+          {% elif user.role.value == 'receiver' %}
+            <!-- Receiver: claim via fetch() -->
+            <button
+              class="btn btn-secondary claim-btn"
+              style="padding:0.4rem 1rem; font-size:0.85rem;"
+              data-listing-id="{{ listing.id }}"
+              id="claim-btn-{{ listing.id }}">
+              Claim
+            </button>
+          {% elif user.role.value == 'donor' %}
+            <!-- Donor: view detail only -->
+            <a href="/listings/{{ listing.id }}"
+               class="btn btn-outline" style="padding:0.4rem 1rem; font-size:0.85rem;">
+              View →
+            </a>
+          {% endif %}
+        </div>
+
+        <!-- Feedback message area per card -->
+        <div id="claim-msg-{{ listing.id }}" class="fetch-msg" aria-live="polite"></div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+
+{% else %}
+  <div class="empty-state">
+    <div class="empty-icon">🔍</div>
+    <p><strong>No listings found.</strong></p>
+    <p class="text-muted">
+      {% if selected_food_type %}
+        Try removing the food type filter, or check back later.
+      {% else %}
+        No food is listed right now. Check back soon!
+      {% endif %}
+    </p>
+    {% if selected_food_type %}
+      <a href="/browse" class="btn btn-outline mt-2">Clear Filters</a>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  /*
+   * CLAIM FLOW
+   *
+   * POST /listings/{id}/claim expects:
+   *   - Authorization: Bearer <token>  (receiver must be authenticated)
+   *   - Content-Type: application/json
+   *   - Body: { "notes": "..." }  (notes are optional — we send an empty string)
+   *
+   * On success (201): update the card UI to reflect "claimed" status.
+   * On 409: someone else just claimed it — show "already claimed" message.
+   * On 401: user isn't logged in (token missing) — redirect to login.
+   */
+  document.querySelectorAll('.claim-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const listingId = btn.dataset.listingId;
+      const msgEl = document.getElementById(`claim-msg-${listingId}`);
+
+      const token = getToken();
+      if (!token) {
+        window.location.href = '/login?msg=Please+log+in+to+claim+food';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Claiming…';
+
+      try {
+        const resp = await fetch(`/listings/${listingId}/claim`, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ notes: '' }),
+        });
+
+        const data = await resp.json();
+
+        if (resp.status === 201) {
+          // ── Success ────────────────────────────────────────────────────────
+          showMsg(msgEl, '✅ Claimed! Check your listing detail for pickup info.', 'success');
+          btn.textContent = 'Claimed ✓';
+          btn.style.background = 'var(--color-success)';
+          btn.disabled = true;
+
+        } else if (resp.status === 409) {
+          // ── Already claimed by someone else ─────────────────────────────
+          showMsg(msgEl, '⚠️ Already claimed by someone else.', 'error');
+          btn.textContent = 'Unavailable';
+          btn.disabled = true;
+
+        } else if (resp.status === 401) {
+          window.location.href = '/login?msg=Please+log+in+to+claim+food';
+
+        } else {
+          const detail = typeof data.detail === 'string'
+            ? data.detail
+            : 'Could not claim this listing.';
+          showMsg(msgEl, '❌ ' + detail, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Claim';
+        }
+      } catch (err) {
+        showMsg(msgEl, '❌ Network error. Please try again.', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Claim';
+      }
+    });
+  });
+
+  function showMsg(el, text, type) {
+    el.textContent = text;
+    el.className = 'fetch-msg visible ' + type;
+  }
+</script>
+{% endblock %}

@@ -18,11 +18,15 @@ INTERVIEW TALKING POINT:
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, status
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates  # noqa: F401 — used by routers
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.database import get_db
 
 # ── Lifespan (startup/shutdown events) ───────────────────────────────────────
 # The `lifespan` context manager replaces the old @app.on_event("startup")
@@ -31,16 +35,51 @@ from app.core.config import settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
-    # Good place to: warm caches, start background schedulers (Phase 5),
-    # verify DB connectivity, etc.
+    # Good place to: warm caches, start background schedulers, verify DB
+    # connectivity, etc.
     print(f"🚀 Starting {settings.APP_NAME} [{settings.APP_ENV}]")
+
+    # ── Start APScheduler ─────────────────────────────────────────────────────
+    # WHY HERE (not at module level)?
+    #   The scheduler must start *after* the asyncio event loop is running.
+    #   The lifespan context manager is called by FastAPI once the event loop
+    #   is active — so this is the correct place. Starting it at module
+    #   import time would race against the event loop setup.
+    #
+    # INTERVIEW TALKING POINT:
+    #   "APScheduler's AsyncIOScheduler reuses FastAPI's existing event loop.
+    #   I start it in the lifespan context manager so it starts after the
+    #   app is ready and shuts down cleanly with the app — no orphaned threads
+    #   or unclosed sessions."
+    from app.core.scheduler import scheduler, check_expiring_listings  # noqa: E402
+
+    # Register the expiry warning job — runs every 15 minutes.
+    # `id` is required for deduplication (APScheduler won't add duplicates
+    # if the lifespan is somehow called twice). `replace_existing=True` ensures
+    # a clean re-registration if the app hot-reloads in dev.
+    scheduler.add_job(
+        check_expiring_listings,
+        trigger="interval",
+        minutes=15,
+        id="check_expiring_listings",
+        replace_existing=True,
+    )
+    scheduler.start()
+    print("🕐 APScheduler started — checking expiring listings every 15 minutes")
+
     yield
+
     # ── Shutdown ──────────────────────────────────────────────────────────────
-    # Good place to: flush caches, shut down schedulers cleanly, etc.
+    # Shut down the scheduler cleanly: wait for the current running job (if any)
+    # to finish before the process exits. `wait=True` (default) is the safe choice
+    # — it avoids killing a job mid-DB-write.
+    scheduler.shutdown(wait=True)
     print("👋 Shutting down...")
 
 
 # ── Create the FastAPI app ────────────────────────────────────────────────────
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title=settings.APP_NAME,
     description="A platform connecting food donors with receivers to reduce food waste.",
@@ -51,6 +90,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── CORS Middleware ───────────────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # ── Static Files ──────────────────────────────────────────────────────────────
 # Serves everything inside app/static/ at the /static URL path.
 # e.g., app/static/css/main.css → http://localhost:8000/static/css/main.css
@@ -58,31 +106,55 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
 # ── Register Routers ──────────────────────────────────────────────────────────
-# Uncomment each router as you build it in future phases.
 # The `prefix` is prepended to every route in that router.
 # The `tags` group endpoints in the /docs UI.
-#
-# from app.routers import auth, listings, notifications, admin, pages
-# app.include_router(auth.router,          prefix="/auth",          tags=["Auth"])
-# app.include_router(listings.router,      prefix="/listings",      tags=["Listings"])
-# app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
-# app.include_router(admin.router,         prefix="/admin",         tags=["Admin"])
-# app.include_router(pages.router,                                  tags=["Pages"])
+from app.routers import auth  # noqa: E402
+from app.routers import listings  # noqa: E402
+from app.routers import notifications  # noqa: E402
+from app.routers import admin  # noqa: E402  # Phase 6: analytics dashboard
+from app.routers import pages  # noqa: E402  # Phase 7: Jinja2 HTML pages
+
+app.include_router(auth.router,          prefix="/auth",          tags=["Auth"])
+app.include_router(listings.router,      prefix="/listings",      tags=["Listings"])
+app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
+app.include_router(admin.router,         prefix="/admin",         tags=["Admin"])
+app.include_router(pages.router,                                  tags=["Pages"])
+
+# ── Register Jinja2 custom filters ────────────────────────────────────────────
+# Jinja2's built-in filters don't include `zip` (Python's built-in zip()).
+# We add it here as a global filter so templates can do:
+#   {% for label, count in labels | zip(counts) %}
+# This avoids the need for an index variable and keeps templates readable.
+admin.templates.env.filters["zip"] = zip
+
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────
-# Simple endpoint used by load balancers and uptime monitors to verify the
-# app is running. Returns 200 OK as long as the process is alive.
+# Comprehensive endpoint used by load balancers and uptime monitors (e.g., Render, Better Stack).
+# Verifies that both the web process and the underlying database connection pool are active.
 @app.get("/health", tags=["Health"])
-async def health_check():
-    return {"status": "ok", "app": settings.APP_NAME}
+async def health_check(db: AsyncSession = Depends(get_db)):
+    try:
+        # Ping the database
+        await db.execute(text("SELECT 1"))
+        return {
+            "status": "ok",
+            "database": "connected",
+            "app": settings.APP_NAME,
+            "environment": settings.APP_ENV,
+        }
+    except Exception as exc:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "error",
+                "database": f"unhealthy: {str(exc)}",
+                "app": settings.APP_NAME,
+                "environment": settings.APP_ENV,
+            },
+        )
 
 
-# ── Root Redirect (temporary placeholder) ────────────────────────────────────
-@app.get("/", tags=["Root"])
-async def root():
-    """Placeholder root — will be replaced by the Jinja2 landing page in Phase 8."""
-    return {
-        "message": f"Welcome to {settings.APP_NAME}!",
-        "docs": "/docs",
-    }
+# ── Root → handled by the pages router ──────────────────────────────────────
+# The pages router registers GET / which renders the Jinja2 landing page.
+# This comment is left here as a signpost — the actual route is in pages.py.

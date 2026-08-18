@@ -28,8 +28,36 @@ passlib[bcrypt]==1.7.4    # Password hashing (bcrypt is the industry standard)
 bcrypt==4.0.1             # Pinned: passlib 1.7.4 has a known compat issue with bcrypt>=4.1
 python-jose[cryptography]==3.3.0  # JWT token creation and verification
 
+# ── Notifications (Phase 4) ───────────────────────────────────────────────────
+# APScheduler: runs periodic background jobs *inside* the FastAPI process.
+# We chose this over Celery because Celery requires a separate message broker
+# (Redis/RabbitMQ) and a dedicated worker process — 2-3 extra infra pieces for
+# one cron job. APScheduler is just a library; no extra services needed.
+# INTERVIEW: "APScheduler vs Celery — APScheduler is in-process, zero-infra,
+# perfect for a single periodic job. Celery is for distributed task queues at
+# scale (millions of jobs, multiple workers). We have neither need here."
+apscheduler==3.10.4       # In-process async scheduler (uses FastAPI's event loop)
+
+# aiosmtplib: async SMTP client — sends email without blocking the event loop.
+# Using stdlib smtplib directly in an async path blocks every other request
+# during the TCP+SMTP handshake. aiosmtplib is the async-native alternative.
+# Dev: point at Mailtrap (free catch-all inbox). Prod: swap .env to SendGrid/Resend.
+aiosmtplib==3.0.1         # Async SMTP client for sending email in async context
+
+# ── Image Upload (Phase 5) ────────────────────────────────────────────────────
+# cloudinary: official Python SDK for Cloudinary (cloud image storage + CDN).
+# Why Cloudinary over local disk or Postgres?
+#   - Local disk: ephemeral on Render/Railway (wiped on every redeploy); also
+#     breaks horizontal scaling since each server has its own disk.
+#   - Postgres bytea: bloats the DB with binary data, slows queries, no CDN.
+#   - Cloudinary: files on global CDN, DB only stores a URL string, free tier
+#     is generous (25 credits/month), handles resize/compress/format for free.
+# python-multipart is already listed above; FastAPI needs it for File() params.
+cloudinary==1.40.0        # Cloudinary SDK — upload images, get back CDN URLs
+
 # ── Dev Utilities ─────────────────────────────────────────────────────────────
 # (Move these to a separate requirements-dev.txt if you want cleaner prod images)
 httpx==0.27.0             # Async HTTP client; also used by FastAPI's test client
 pytest==8.2.2             # Test runner
 pytest-asyncio==0.23.7    # Async test support for pytest
+aiosqlite==0.22.1         # Async SQLite driver for in-memory testing

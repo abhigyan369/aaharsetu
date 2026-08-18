@@ -71,8 +71,12 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # SQLAlchemy maps Python enum → Postgres native ENUM type via the name= arg.
+    # values_callable: use enum .value ("donor") not .name ("DONOR") — the Postgres
+    # ENUM type was created with lowercase values matching UserRole.DONOR.value.
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, name="userrole"), nullable=False, default=UserRole.RECEIVER
+        Enum(UserRole, name="userrole", values_callable=lambda obj: [e.value for e in obj]),
+        nullable=False,
+        default=UserRole.RECEIVER,
     )
 
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)

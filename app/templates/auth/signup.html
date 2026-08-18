@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{#
+  app/templates/auth/signup.html — User Registration Form
+  =========================================================
+  Form submits via fetch() (not a plain HTML form action) so we can
+  display success/error messages without a full page reload.
+
+  FETCH() PATTERN USED HERE:
+    1. User fills the form and clicks "Create Account"
+    2. JS intercepts the submit event (preventDefault)
+    3. fetch() POSTs JSON to POST /auth/signup
+    4. On 201 Created → show green success message, redirect to /login
+    5. On 4xx → show red error message with the API's detail string
+    6. On network error → show generic error
+
+  WHY JSON (not FormData) for this endpoint?
+    POST /auth/signup expects a JSON body (Pydantic model: UserCreate).
+    The listing creation endpoint uses FormData (because it includes file upload).
+    Check which content-type each endpoint expects before choosing.
+#}
+
+{% block title %}Sign Up — FoodShare{% endblock %}
+{% block meta_description %}Create a FoodShare account as a food donor or receiver.{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+  <div class="auth-box">
+    <h1>Create Account</h1>
+    <p class="auth-subtitle">Join FoodShare and start making a difference.</p>
+
+    <!-- Feedback message area — shown after fetch() completes -->
+    <div id="signup-msg" class="form-msg" role="alert" aria-live="polite"></div>
+
+    <form id="signup-form" novalidate>
+      <!-- Role selection — shown as styled radio buttons -->
+      <div class="form-group">
+        <label class="form-label">I want to…</label>
+        <div class="role-radio-group">
+          <label class="role-radio-label">
+            <input type="radio" name="role" id="role-donor" value="donor"
+              {% if default_role == 'donor' %}checked{% endif %} />
+            🤝 Donate Food
+          </label>
+          <label class="role-radio-label">
+            <input type="radio" name="role" id="role-receiver" value="receiver"
+              {% if default_role == 'receiver' %}checked{% endif %} />
+            🙋 Receive Food
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="name">Full Name</label>
+        <input type="text" id="name" name="name" class="form-input"
+               placeholder="e.g. Priya Sharma" required autocomplete="name" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="email">Email Address</label>
+        <input type="email" id="email" name="email" class="form-input"
+               placeholder="you@example.com" required autocomplete="email" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <input type="password" id="password" name="password" class="form-input"
+               placeholder="Minimum 8 characters" required minlength="8"
+               autocomplete="new-password" />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="phone">Phone Number <span class="text-muted">(optional)</span></label>
+        <input type="tel" id="phone" name="phone" class="form-input"
+               placeholder="+91 98765 43210" autocomplete="tel" />
+      </div>
+
+      <button type="submit" id="signup-btn" class="btn btn-primary" style="width:100%; margin-top:0.5rem;">
+        Create Account
+      </button>
+    </form>
+
+    <div class="form-divider">Already have an account? <a href="/login">Log in →</a></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  /*
+   * SIGNUP FORM — fetch() to POST /auth/signup
+   *
+   * The API expects Content-Type: application/json (not form-encoded),
+   * because the route uses a Pydantic model body (UserCreate).
+   *
+   * Steps:
+   *  1. Validate form fields client-side (quick UX check)
+   *  2. Build the JSON payload
+   *  3. POST to /auth/signup
+   *  4. Handle 201 (success) or error responses
+   */
+  document.getElementById('signup-form').addEventListener('submit', async (e) => {
+    e.preventDefault(); // prevent browser's default form navigation
+
+    const btn = document.getElementById('signup-btn');
+    const msg = document.getElementById('signup-msg');
+
+    // ── Client-side validation ───────────────────────────────────────────────
+    const role     = document.querySelector('input[name="role"]:checked')?.value;
+    const name     = document.getElementById('name').value.trim();
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const phone    = document.getElementById('phone').value.trim() || null;
+
+    if (!role) {
+      showMsg(msg, 'Please select a role (Donate or Receive).', 'error');
+      return;
+    }
+    if (!name || !email || !password) {
+      showMsg(msg, 'Please fill in all required fields.', 'error');
+      return;
+    }
+    if (password.length < 8) {
+      showMsg(msg, 'Password must be at least 8 characters.', 'error');
+      return;
+    }
+
+    // ── Loading state ────────────────────────────────────────────────────────
+    btn.disabled = true;
+    btn.textContent = 'Creating account…';
+    hideMsg(msg);
+
+    try {
+      const resp = await fetch('/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password, role, phone }),
+      });
+
+      const data = await resp.json();
+
+      if (resp.ok) {
+        // ── Success → redirect to login ───────────────────────────────────
+        showMsg(msg, '✅ Account created! Redirecting to login…', 'success');
+        setTimeout(() => { window.location.href = '/login?msg=Account+created.+Please+log+in.'; }, 1200);
+      } else {
+        // ── API error (4xx) ───────────────────────────────────────────────
+        // FastAPI error responses have a `detail` field.
+        const detail = data.detail || 'Signup failed. Please try again.';
+        showMsg(msg, '❌ ' + detail, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Create Account';
+      }
+    } catch (err) {
+      // ── Network error ─────────────────────────────────────────────────────
+      showMsg(msg, '❌ Network error. Please check your connection.', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Create Account';
+    }
+  });
+
+  /* ── Helpers ──────────────────────────────────────────────────────────── */
+  function showMsg(el, text, type) {
+    el.textContent = text;
+    el.className = 'form-msg visible ' + type;
+  }
+  function hideMsg(el) {
+    el.className = 'form-msg';
+    el.textContent = '';
+  }
+</script>
+{% endblock %}

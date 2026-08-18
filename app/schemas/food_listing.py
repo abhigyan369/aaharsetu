@@ -110,5 +110,31 @@ class FoodListingSummary(BaseModel):
     status: ListingStatus
     image_url: str | None
     donor_id: int
+    # Populated only when the caller provides lat/lon + max_distance_km.
+    # None otherwise — tells the client "we didn't compute distance this call".
+    distance_km: float | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── Paginated list response ───────────────────────────────────────────────────
+class FoodListingListResponse(BaseModel):
+    """
+    Envelope for GET /listings responses.
+
+    WHY wrap in an envelope?
+      Returning a bare list makes it impossible to add metadata (total count,
+      pagination info) later without breaking existing clients. An envelope
+      gives us forward-compatibility for free.
+
+    INTERVIEW TALKING POINT:
+      "Pagination prevents us from loading tens of thousands of rows into memory.
+      limit/offset is simple and stateless — works well at this scale. For
+      cursor-based pagination (better for real-time feeds), we'd use a
+      created_at or id cursor instead of offset."
+    """
+
+    total: int                        # total matching rows (before limit/offset)
+    limit: int
+    offset: int
+    items: list[FoodListingSummary]

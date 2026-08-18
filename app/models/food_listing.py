@@ -71,7 +71,8 @@ class FoodListing(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     food_type: Mapped[FoodType] = mapped_column(
-        Enum(FoodType, name="foodtype"), nullable=False
+        Enum(FoodType, name="foodtype", values_callable=lambda obj: [e.value for e in obj]),
+        nullable=False,
     )
 
     # quantity is a number (e.g. 5) and quantity_unit is the unit (e.g. "kg", "portions")
@@ -106,7 +107,7 @@ class FoodListing(Base):
 
     # ── Status ────────────────────────────────────────────────────────────────
     status: Mapped[ListingStatus] = mapped_column(
-        Enum(ListingStatus, name="listingstatus"),
+        Enum(ListingStatus, name="listingstatus", values_callable=lambda obj: [e.value for e in obj]),
         nullable=False,
         default=ListingStatus.AVAILABLE,
         index=True,  # We query by status very often (e.g. "all available listings")

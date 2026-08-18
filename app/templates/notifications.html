@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications — AaharSetu{% endblock %}
+{% block meta_description %}View your in-app notifications.{% endblock %}
+
+{% block content %}
+<div style="max-width: 800px; margin: 0 auto;">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem;">
+    <h1>🔔 Notifications</h1>
+  </div>
+
+  {% if notifications %}
+    <div style="display:flex; flex-direction:column; gap:0.75rem;">
+      {% for notif in notifications %}
+        <div class="card" style="display:flex; align-items:center; justify-content:space-between; {% if not notif.is_read %}border-left: 4px solid var(--color-secondary); background: #f0fdf4;{% endif %}">
+          <div>
+            <p style="margin:0; font-size:0.95rem; font-weight:{% if not notif.is_read %}600{% else %}400{% endif %};">
+              {{ notif.message }}
+            </p>
+            <span class="text-muted" style="font-size:0.8rem;">
+              {{ notif.created_at.strftime('%d %b %Y, %H:%M UTC') }}
+            </span>
+          </div>
+          {% if not notif.is_read %}
+            <button class="btn btn-outline" style="padding:0.3rem 0.65rem; font-size:0.8rem;"
+                    onclick="markRead({{ notif.id }}, this)">
+              Mark Read
+            </button>
+          {% else %}
+            <span class="badge" style="background:#e5e7eb; color:#4b5563;">Read</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state" style="background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-lg);">
+      <div class="empty-icon">🔕</div>
+      <p><strong>No notifications yet.</strong></p>
+      <p class="text-muted">You will receive notifications here when listings are claimed or near expiry.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  async function markRead(notifId, btn) {
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const resp = await fetch(`/notifications/${notifId}/read`, {
+        headers: { 'Authorization': 'Bearer ' + getToken() },
+      });
+      if (resp.ok) {
+        window.location.reload();
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Mark Read';
+      }
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Mark Read';
+    }
+  }
+</script>
+{% endblock %}
