@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Utensils, HeartHandshake, TrendingUp, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { FaqSection } from '../components/FaqSection';
 
 export const HomePage = () => {
   const { user } = useAuth();
@@ -110,6 +111,9 @@ export const HomePage = () => {
           </div>
         </Link>
       </div>
+
+      {/* FAQ Section */}
+      <FaqSection />
     </div>
   );
 };
