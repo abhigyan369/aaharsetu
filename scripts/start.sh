@@ -44,6 +44,11 @@ echo "🚀 Running database schema migrations with Alembic..."
 alembic upgrade head
 echo "✅ Migrations completed successfully."
 
+if [ -n "$ADMIN_EMAIL" ] && [ -n "$ADMIN_PASSWORD" ]; then
+    echo "👤 Checking and seeding initial admin user..."
+    python -m scripts.seed_admin
+fi
+
 echo "🌐 Starting Uvicorn ASGI server..."
 # PORT is passed dynamically by hosting platforms like Render ($PORT)
 exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"

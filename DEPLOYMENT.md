@@ -59,9 +59,32 @@ If you prefer to configure services manually in the Render dashboard:
 | `SECRET_KEY` | Long random hex string | Signs JWT authentication tokens |
 | `CORS_ORIGINS` | `*` or `https://<your-app>.onrender.com` | Allowed CORS origins for API requests |
 | `EMAILS_ENABLED` | `false` | Master toggle for email notifications |
+| `ADMIN_EMAIL` | `admin@example.com` | Email for initial admin account seeding |
+| `ADMIN_PASSWORD` | Strong password (>=12 chars) | Password for initial admin account seeding |
 | `CLOUDINARY_CLOUD_NAME` | Cloudinary name | Optional for image uploads |
 | `CLOUDINARY_API_KEY` | Cloudinary API Key | Optional for image uploads |
 | `CLOUDINARY_API_SECRET` | Cloudinary API Secret | Optional for image uploads |
+
+---
+
+## Seeding Admin Credentials on Render
+
+The repository provides [`scripts/seed_admin.py`](file:///Users/abhigyankumar/food_waste_redistribution/scripts/seed_admin.py) to safely and idempotently create the initial privileged Admin user.
+
+### Method 1: Automatic Seeding on Deployment (Recommended)
+1. In your Render Web Service Dashboard, go to **Environment**.
+2. Add two environment variables:
+   - `ADMIN_EMAIL`: `admin@yourdomain.com`
+   - `ADMIN_PASSWORD`: `YourSecurePassword123!` *(Must be at least 12 characters)*
+3. Trigger a manual deploy or push code to GitHub.
+4. On startup, [`scripts/start.sh`](file:///Users/abhigyankumar/food_waste_redistribution/scripts/start.sh) will detect these variables, execute `python -m scripts.seed_admin`, create the admin account, and skip if already present.
+
+### Method 2: Manual Run via Render Shell
+1. In Render Dashboard, select your Web Service and open the **Shell** tab.
+2. Run:
+   ```bash
+   ADMIN_EMAIL="admin@yourdomain.com" ADMIN_PASSWORD="YourSecurePassword123!" python -m scripts.seed_admin
+   ```
 
 ---
 
@@ -69,4 +92,4 @@ If you prefer to configure services manually in the Render dashboard:
 - **FastAPI Backend**: Serves machine-to-machine JSON APIs, WebSockets (`/chat/ws`), and health checks (`/health`).
 - **Jinja2 Server Pages**: Served at `/` (landing page, donor dashboard, receiver browse, etc.).
 - **React SPA**: Built into `frontend/dist` by Docker multi-stage build, served automatically at `/app`.
-- **Database Migrations**: Automatically executed on container startup via `scripts/start.sh` using Alembic.
+- **Database Migrations & Admin Seed**: Automatically executed on container startup via `scripts/start.sh` using Alembic and `scripts/seed_admin.py`.
