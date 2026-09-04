@@ -61,7 +61,22 @@ export const UnifiedChatWidget = () => {
     }
 
     let isMounted = true;
-    const wsUrl = `ws://localhost:8000/chat/ws?token=${encodeURIComponent(token)}`;
+
+    // Dynamically construct WebSocket URL supporting wss:// in HTTPS environments
+    let wsUrl = '';
+    if (import.meta.env.VITE_WS_URL) {
+      wsUrl = `${import.meta.env.VITE_WS_URL}/chat/ws?token=${encodeURIComponent(token)}`;
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      let host = window.location.host;
+      if (import.meta.env.VITE_API_BASE_URL) {
+        try {
+          const url = new URL(import.meta.env.VITE_API_BASE_URL);
+          host = url.host;
+        } catch (e) {}
+      }
+      wsUrl = `${protocol}//${host}/chat/ws?token=${encodeURIComponent(token)}`;
+    }
 
     setWsStatus('connecting');
     const ws = new WebSocket(wsUrl);

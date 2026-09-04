@@ -109,23 +109,47 @@ app = FastAPI(
 )
 
 # ── CORS Middleware ───────────────────────────────────────────────────────────
+cors_origins = [o for o in settings.CORS_ORIGINS if o != "*"]
+default_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+allowed_origins = list(set(cors_origins + default_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "*"
-    ],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.onrender\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── Static Files ──────────────────────────────────────────────────────────────
-# Serves everything inside app/static/ at the /static URL path.
-# e.g., app/static/css/main.css → http://localhost:8000/static/css/main.css
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+# ── Static Files & SPA Mounting ───────────────────────────────────────────────
+import os
+from fastapi.responses import FileResponse
+
+# Serves legacy Jinja2 static assets inside app/static/ at /static
+if os.path.exists("app/static"):
+    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+# If compiled React SPA exists (frontend/dist), serve assets and fallback to index.html
+if os.path.exists("frontend/dist"):
+    if os.path.exists("frontend/dist/assets"):
+        app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="react_assets")
+
+    @app.get("/app/{full_path:path}", include_in_schema=False)
+    async def serve_spa_route(full_path: str):
+        file_path = os.path.join("frontend/dist", full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse("frontend/dist/index.html")
+
+    @app.get("/app", include_in_schema=False)
+    async def serve_spa_root():
+        return FileResponse("frontend/dist/index.html")
 
 
 # ── Register Routers ──────────────────────────────────────────────────────────

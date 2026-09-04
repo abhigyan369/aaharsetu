@@ -31,6 +31,19 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     CORS_ORIGINS: list[str] = ["*"]  # Configurable CORS allowed origins
 
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: str | list[str]) -> list[str]:
+        if isinstance(v, str):
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        return v
+
     # ── Database ──────────────────────────────────────────────────────────────
     # Full connection string; asyncpg is the async PostgreSQL driver
     DATABASE_URL: str
