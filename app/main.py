@@ -77,13 +77,10 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     print("🕐 APScheduler started — auto-expiring past-due listings (1m) & checking expiry warnings (15m)")
 
-    # Create database tables if they do not exist
-    from app.db.database import engine  # noqa: E402
-    from app.db.base import Base  # noqa: E402
-    import app.models  # noqa: E402
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    print("✨ Database tables created/verified")
+    # Database schema management is handled strictly by Alembic migrations
+    # (executed in scripts/start.sh before Uvicorn starts serving traffic).
+    # Running Base.metadata.create_all here would bypass version tracking.
+
 
     yield
 
