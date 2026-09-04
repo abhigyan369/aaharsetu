@@ -17,7 +17,17 @@ INTERVIEW TALKING POINT — Haversine vs. a routing API:
   road-graph data, but the haversine gives us the spatial intuition cheaply."
 """
 
+from datetime import datetime, timezone
 import math
+
+
+def is_past_expiry(expiry_time: datetime | None) -> bool:
+    """Return True if the given expiry_time is in the past, accounting for tz-naive datetimes."""
+    if expiry_time is None:
+        return False
+    if expiry_time.tzinfo is None:
+        expiry_time = expiry_time.replace(tzinfo=timezone.utc)
+    return expiry_time < datetime.now(timezone.utc)
 
 
 # ── Haversine Formula ─────────────────────────────────────────────────────────

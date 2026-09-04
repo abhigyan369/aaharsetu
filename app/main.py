@@ -52,6 +52,16 @@ async def lifespan(app: FastAPI):
     #   app is ready and shuts down cleanly with the app — no orphaned threads
     #   or unclosed sessions."
     from app.core.scheduler import scheduler, check_expiring_listings  # noqa: E402
+    from app.routers.listings import expire_stale_listings  # noqa: E402
+
+    # Register the auto-expiry job — runs every minute to mark past-due listings as EXPIRED.
+    scheduler.add_job(
+        expire_stale_listings,
+        trigger="interval",
+        minutes=1,
+        id="expire_stale_listings",
+        replace_existing=True,
+    )
 
     # Register the expiry warning job — runs every 15 minutes.
     # `id` is required for deduplication (APScheduler won't add duplicates
@@ -65,7 +75,15 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     scheduler.start()
-    print("🕐 APScheduler started — checking expiring listings every 15 minutes")
+    print("🕐 APScheduler started — auto-expiring past-due listings (1m) & checking expiry warnings (15m)")
+
+    # Create database tables if they do not exist
+    from app.db.database import engine  # noqa: E402
+    from app.db.base import Base  # noqa: E402
+    import app.models  # noqa: E402
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print("✨ Database tables created/verified")
 
     yield
 
@@ -93,7 +111,12 @@ app = FastAPI(
 # ── CORS Middleware ───────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "*"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -112,12 +135,14 @@ from app.routers import auth  # noqa: E402
 from app.routers import listings  # noqa: E402
 from app.routers import notifications  # noqa: E402
 from app.routers import admin  # noqa: E402  # Phase 6: analytics dashboard
+from app.routers import chat  # noqa: E402
 from app.routers import pages  # noqa: E402  # Phase 7: Jinja2 HTML pages
 
 app.include_router(auth.router,          prefix="/auth",          tags=["Auth"])
 app.include_router(listings.router,      prefix="/listings",      tags=["Listings"])
 app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
 app.include_router(admin.router,         prefix="/admin",         tags=["Admin"])
+app.include_router(chat.router,          prefix="/chat",          tags=["Chat"])
 app.include_router(pages.router,                                  tags=["Pages"])
 
 # ── Register Jinja2 custom filters ────────────────────────────────────────────

@@ -39,6 +39,7 @@ from typing import Annotated
 from fastapi import (
     APIRouter,
     BackgroundTasks,
+    Body,
     Depends,
     File,
     Form,
@@ -47,7 +48,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -60,7 +61,7 @@ from app.core.dependencies import (
 )
 from app.core.email_service import render_claim_notification, send_email
 from app.core.notification_service import create_notification
-from app.core.utils import is_within_distance
+from app.core.utils import is_past_expiry, is_within_distance
 from app.db.database import AsyncSessionLocal, get_db
 from app.models.claim import Claim, ClaimStatus
 from app.models.food_listing import FoodListing, FoodType, ListingStatus
@@ -122,6 +123,10 @@ async def get_listing_or_404(listing_id: int, db: AsyncSession) -> FoodListing:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Listing {listing_id} not found.",
         )
+    if listing.status == ListingStatus.AVAILABLE and is_past_expiry(listing.expiry_time):
+        listing.status = ListingStatus.EXPIRED
+        await db.commit()
+        await db.refresh(listing)
     return listing
 
 
@@ -302,6 +307,9 @@ async def list_listings(
             detail="lat, lon, and max_distance_km must all be provided together.",
         )
 
+    # ── Auto-expire any past-due listings ─────────────────────────────────────
+    await expire_stale_listings()
+
     # ── Build base query ──────────────────────────────────────────────────────
     base_query = select(FoodListing)
 
@@ -310,6 +318,12 @@ async def list_listings(
 
     if listing_status is not None:
         base_query = base_query.where(FoodListing.status == listing_status)
+
+    now = datetime.now(timezone.utc)
+    if listing_status == ListingStatus.AVAILABLE or listing_status is None:
+        base_query = base_query.where(
+            or_(FoodListing.expiry_time == None, FoodListing.expiry_time >= now)  # noqa: E711
+        )
 
     # Order by newest first (most recently posted listings appear at the top)
     base_query = base_query.order_by(FoodListing.created_at.desc())
@@ -499,10 +513,10 @@ async def cancel_listing(
 )
 async def claim_listing(
     listing_id: int,
-    payload: ClaimCreate,
     background_tasks: BackgroundTasks,
     current_user: ReceiverUser,
     db: Annotated[AsyncSession, Depends(get_db)],
+    payload: Annotated[ClaimCreate | None, Body()] = None,
 ) -> ClaimRead:
     """
     Atomically claim a food listing for the authenticated receiver.
@@ -540,6 +554,15 @@ async def claim_listing(
             detail=f"Listing {listing_id} not found.",
         )
 
+    # ── Expiry check ──────────────────────────────────────────────────────
+    if is_past_expiry(listing.expiry_time):
+        listing.status = ListingStatus.EXPIRED
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This food listing has expired and is no longer available to claim.",
+        )
+
     # ── Status guard — reject if not available ────────────────────────────
     if listing.status != ListingStatus.AVAILABLE:
         raise HTTPException(
@@ -555,7 +578,7 @@ async def claim_listing(
         listing_id=listing_id,
         receiver_id=current_user.id,
         status=ClaimStatus.PENDING,
-        notes=payload.notes,
+        notes=payload.notes if payload else None,
     )
     db.add(claim)
 

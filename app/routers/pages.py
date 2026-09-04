@@ -42,10 +42,11 @@ JWT STORAGE — httpOnly COOKIE vs. localStorage:
 
 from typing import Annotated
 
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -302,8 +303,15 @@ async def browse_listings(
     token_data = _get_current_user_from_cookie(request)
     user = await _fetch_user(token_data, db)
 
+    from app.routers.listings import expire_stale_listings
+    await expire_stale_listings()
+    now = datetime.now(timezone.utc)
+
     # Build the query
-    query = select(FoodListing).where(FoodListing.status == ListingStatus.AVAILABLE)
+    query = select(FoodListing).where(
+        FoodListing.status == ListingStatus.AVAILABLE,
+        or_(FoodListing.expiry_time == None, FoodListing.expiry_time >= now),  # noqa: E711
+    )
 
     if food_type and food_type in [ft.value for ft in FoodType]:
         query = query.where(FoodListing.food_type == food_type)

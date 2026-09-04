@@ -21,5 +21,6 @@ from app.models.user import User                    # noqa: F401
 from app.models.food_listing import FoodListing     # noqa: F401
 from app.models.claim import Claim                  # noqa: F401
 from app.models.notification import Notification    # noqa: F401
+from app.models.chat_message import ChatMessage     # noqa: F401
 
-__all__ = ["User", "FoodListing", "Claim", "Notification"]
+__all__ = ["User", "FoodListing", "Claim", "Notification", "ChatMessage"]
