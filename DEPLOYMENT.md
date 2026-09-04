@@ -17,7 +17,7 @@ Render Blueprints automatically set up both the **Web Service** and the **Postgr
    - **Database**: `food-waste-db` (PostgreSQL)
    - **Web Service**: `food-waste-redistribution` (Multi-stage Docker container)
 6. Click **Apply**.
-7. Render will build the container, run database migrations automatically via `alembic upgrade head`, and start the application!
+7. Render will build the container, run database migrations automatically via `alembic upgrade head`, and start the application
 
 ---
 
