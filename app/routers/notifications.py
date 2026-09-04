@@ -41,6 +41,7 @@ router = APIRouter()
 # ─────────────────────────────────────────────────────────────────────────────
 # GET /notifications — List current user's notifications
 # ─────────────────────────────────────────────────────────────────────────────
+@router.get("", response_model=list[NotificationRead], include_in_schema=False)
 @router.get(
     "/",
     response_model=list[NotificationRead],

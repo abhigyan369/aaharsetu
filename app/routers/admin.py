@@ -27,11 +27,12 @@ SECURITY:
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import cast, Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,6 +50,7 @@ router = APIRouter()
 # Jinja2 templates directory — shared with the rest of the app.
 # `directory="app/templates"` is relative to where uvicorn is launched (project root).
 templates = Jinja2Templates(directory="app/templates")
+
 
 
 # ── Helper: run all aggregate queries ─────────────────────────────────────────
@@ -247,26 +249,21 @@ async def get_admin_stats(
 @router.get(
     "/dashboard",
     response_class=HTMLResponse,
-    summary="Admin: analytics dashboard (HTML)",
+    summary="Admin: analytics dashboard",
     tags=["Admin"],
 )
 async def admin_dashboard(
     request: Request,
     current_admin: AdminUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> HTMLResponse:
+) -> Any:
     """
-    Renders the admin analytics dashboard as a server-side HTML page.
-
-    Uses the same `_gather_stats()` helper as the JSON endpoint — single
-    source of truth for the aggregate queries.
-
-    WHY SERVER-SIDE RENDERING instead of a React/Vue SPA?
-      The user only knows HTML/CSS and vanilla JS. Server-rendered Jinja2
-      templates let us pass Python data directly to the template without
-      a separate fetch() call. Chart.js is loaded via CDN and fed data
-      embedded in a <script> block — no build step, no npm, no bundler.
+    Renders the admin analytics dashboard.
+    Returns React SPA index.html when built, or falls back to legacy Jinja2 template.
     """
+    if os.path.exists("frontend/dist/index.html"):
+        return FileResponse("frontend/dist/index.html")
+
     stats = await _gather_stats(db)
 
     return templates.TemplateResponse(

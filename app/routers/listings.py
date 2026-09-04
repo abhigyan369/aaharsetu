@@ -33,8 +33,9 @@ INTERVIEW TALKING POINT — Double-claim prevention:
   even under concurrent load without any application-level mutex."
 """
 
+import os
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import (
     APIRouter,
@@ -45,9 +46,11 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -133,6 +136,7 @@ async def get_listing_or_404(listing_id: int, db: AsyncSession) -> FoodListing:
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /listings  — Donor only: create a new food listing
 # ─────────────────────────────────────────────────────────────────────────────
+@router.post("", response_model=FoodListingRead, include_in_schema=False)
 @router.post(
     "/",
     response_model=FoodListingRead,
@@ -254,6 +258,7 @@ async def create_listing(
 # ─────────────────────────────────────────────────────────────────────────────
 # GET /listings  — Public: list listings with filters + pagination
 # ─────────────────────────────────────────────────────────────────────────────
+@router.get("", response_model=FoodListingListResponse, include_in_schema=False)
 @router.get(
     "/",
     response_model=FoodListingListResponse,
@@ -378,6 +383,19 @@ async def list_listings(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GET /listings/new — React SPA route fallback
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get(
+    "/new",
+    include_in_schema=False,
+)
+async def get_new_listing_page():
+    if os.path.exists("frontend/dist/index.html"):
+        return FileResponse("frontend/dist/index.html")
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page not found")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # GET /listings/{id}  — Public: get a single listing's full detail
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get(
@@ -387,14 +405,20 @@ async def list_listings(
 )
 async def get_listing(
     listing_id: int,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> FoodListingRead:
+) -> Any:
     """
     Return full details for a single food listing, including the donor's
     public profile (name, id — never email/password).
+    If requested directly via browser navigation (Accept: text/html), serve the React SPA index.html.
     """
+    accept_header = request.headers.get("accept", "")
+    if accept_header.startswith("text/html") and os.path.exists("frontend/dist/index.html"):
+        return FileResponse("frontend/dist/index.html")
+
     listing = await get_listing_or_404(listing_id, db)
-    return listing  # type: ignore[return-value]
+    return listing
 
 
 # ─────────────────────────────────────────────────────────────────────────────

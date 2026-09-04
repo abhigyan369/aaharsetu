@@ -18,7 +18,7 @@ INTERVIEW TALKING POINT:
 
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, status
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -124,7 +124,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Static Files & SPA Mounting ───────────────────────────────────────────────
+# ── Static Files Mounting ─────────────────────────────────────────────────────
 import os
 from fastapi.responses import FileResponse
 
@@ -132,24 +132,12 @@ from fastapi.responses import FileResponse
 if os.path.exists("app/static"):
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# If compiled React SPA exists (frontend/dist), serve assets and fallback to index.html
-if os.path.exists("frontend/dist"):
-    if os.path.exists("frontend/dist/assets"):
-        app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="react_assets")
-
-    @app.get("/app/{full_path:path}", include_in_schema=False)
-    async def serve_spa_route(full_path: str):
-        file_path = os.path.join("frontend/dist", full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse("frontend/dist/index.html")
-
-    @app.get("/app", include_in_schema=False)
-    async def serve_spa_root():
-        return FileResponse("frontend/dist/index.html")
+# If compiled React SPA assets exist (frontend/dist/assets), serve them at /assets
+if os.path.exists("frontend/dist/assets"):
+    app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="react_assets")
 
 
-# ── Register Routers ──────────────────────────────────────────────────────────
+# ── Register API Routers ──────────────────────────────────────────────────────
 # The `prefix` is prepended to every route in that router.
 # The `tags` group endpoints in the /docs UI.
 from app.routers import auth  # noqa: E402
@@ -164,15 +152,10 @@ app.include_router(listings.router,      prefix="/listings",      tags=["Listing
 app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
 app.include_router(admin.router,         prefix="/admin",         tags=["Admin"])
 app.include_router(chat.router,          prefix="/chat",          tags=["Chat"])
-app.include_router(pages.router,                                  tags=["Pages"])
+app.include_router(pages.router,         prefix="/pages",         tags=["Pages"])
 
 # ── Register Jinja2 custom filters ────────────────────────────────────────────
-# Jinja2's built-in filters don't include `zip` (Python's built-in zip()).
-# We add it here as a global filter so templates can do:
-#   {% for label, count in labels | zip(counts) %}
-# This avoids the need for an index variable and keeps templates readable.
 admin.templates.env.filters["zip"] = zip
-
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────
@@ -201,6 +184,18 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         )
 
 
-# ── Root → handled by the pages router ──────────────────────────────────────
-# The pages router registers GET / which renders the Jinja2 landing page.
-# This comment is left here as a signpost — the actual route is in pages.py.
+# ── React SPA Fallback Routes ─────────────────────────────────────────────────
+# Registered AFTER all API routers to ensure API routes are matched first.
+# Serves frontend/dist/index.html for root / and client-side React routes.
+if os.path.exists("frontend/dist"):
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa_route(full_path: str):
+        file_path = os.path.join("frontend/dist", full_path)
+        if full_path and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse("frontend/dist/index.html")
+
+    @app.get("/", include_in_schema=False)
+    async def serve_spa_root():
+        return FileResponse("frontend/dist/index.html")
+
