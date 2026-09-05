@@ -26,7 +26,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, Index, String, func
+from sqlalchemy import Boolean, DateTime, Enum, Float, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -80,6 +80,11 @@ class User(Base):
     )
 
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # ── Default Location (Donor pickup or Receiver location) ───────────────
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Email/phone verification flag — set to True after OTP/link verification
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

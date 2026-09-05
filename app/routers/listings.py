@@ -64,9 +64,10 @@ from app.core.dependencies import (
 )
 from app.core.email_service import render_claim_notification, send_email
 from app.core.notification_service import create_notification
-from app.core.utils import is_past_expiry, is_within_distance
+from app.core.utils import haversine, is_past_expiry, is_within_distance
 from app.db.database import AsyncSessionLocal, get_db
 from app.models.claim import Claim, ClaimStatus
+from app.models.connection import Connection, ConnectionStatus
 from app.models.food_listing import FoodListing, FoodType, ListingStatus
 from app.models.user import User, UserRole
 from app.schemas.claim import ClaimCreate, ClaimRead
@@ -273,9 +274,9 @@ async def list_listings(
         Query(alias="status", description="Filter by listing status"),
     ] = None,
     # ── Proximity filter (haversine) ──────────────────────────────────────────
-    # All three must be provided together; validated below.
     lat: Annotated[float | None, Query(ge=-90, le=90, description="Caller's latitude")] = None,
     lon: Annotated[float | None, Query(ge=-180, le=180, description="Caller's longitude")] = None,
+    lng: Annotated[float | None, Query(ge=-180, le=180, description="Caller's longitude (alias)")] = None,
     max_distance_km: Annotated[
         float | None,
         Query(gt=0, description="Max distance from lat/lon in kilometres"),
@@ -287,30 +288,14 @@ async def list_listings(
     """
     Return a paginated list of food listings.
 
-    **Filters (all optional, combinable):**
-    - `food_type` — cooked | packaged | raw | bakery | other
-    - `status` — available | claimed | picked_up | expired | cancelled
-    - `lat` + `lon` + `max_distance_km` — proximity filter using the haversine formula
-
     **Proximity filter notes:**
-    - All three (`lat`, `lon`, `max_distance_km`) must be provided together.
-    - Listings with no stored coordinates are **included** (cannot be excluded).
-    - Distance is the straight-line great-circle distance, NOT road distance.
-    - The `distance_km` field is populated in each result item when filtering.
-
-    **Pagination:**
-    - Default page size is 20, max is 100.
-    - `total` in the response envelope is the count *before* limit/offset is applied.
+    - Calculates distance using Haversine formula.
+    - Sorts from nearest donor to farthest donor.
+    - Configurable radius defaults to 10 km when lat/lon is provided.
     """
-    # ── Validate that proximity params are provided as a group ────────────────
-    proximity_params = [lat, lon, max_distance_km]
-    if any(p is not None for p in proximity_params) and not all(
-        p is not None for p in proximity_params
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="lat, lon, and max_distance_km must all be provided together.",
-        )
+    # Accept `lng` alias for `lon`
+    if lon is None and lng is not None:
+        lon = lng
 
     # ── Auto-expire any past-due listings ─────────────────────────────────────
     await expire_stale_listings()
@@ -330,52 +315,48 @@ async def list_listings(
             or_(FoodListing.expiry_time == None, FoodListing.expiry_time >= now)  # noqa: E711
         )
 
-    # Order by newest first (most recently posted listings appear at the top)
+    # Default DB ordering
     base_query = base_query.order_by(FoodListing.created_at.desc())
 
-    # ── Count total matching rows (for the response envelope) ─────────────────
-    # We run the count BEFORE applying limit/offset so the client knows how many
-    # pages exist. Using func.count() is a single aggregate query — not len(rows).
+    # ── Count total matching rows ─────────────────────────────────────────────
     count_query = select(func.count()).select_from(base_query.subquery())
     total: int = (await db.execute(count_query)).scalar_one()
 
     # ── Fetch the page ────────────────────────────────────────────────────────
-    if max_distance_km is None:
-        # No proximity filter — apply limit/offset in SQL (efficient)
+    if lat is None or lon is None:
+        # No proximity filter — apply limit/offset in SQL
         paginated_query = base_query.offset(offset).limit(limit)
         result = await db.execute(paginated_query)
         rows = list(result.scalars().all())
 
         items = [FoodListingSummary.model_validate(row) for row in rows]
     else:
-        # Proximity filter — we must compute haversine in Python, so we fetch
-        # ALL matching rows first, filter by distance, then apply pagination.
-        #
-        # WHY NOT SQL? PostgreSQL (without PostGIS) has no built-in spherical
-        # distance function. We could add a bounding-box pre-filter
-        # (WHERE lat BETWEEN ... AND lon BETWEEN ...) for efficiency at scale,
-        # but at this volume Python post-filtering is fine.
-        #
-        # BOUNDING BOX PRE-FILTER (optimisation note):
-        #   Approx 1 degree of latitude ≈ 111 km. So max_distance_km / 111
-        #   gives a bounding box in degrees. This would be a good next step
-        #   to add as a WHERE clause to reduce rows fetched before haversine.
+        # Proximity filter provided — compute haversine distance for each listing
         result = await db.execute(base_query)
         all_rows = list(result.scalars().all())
 
-        # Filter by haversine distance and annotate with distance_km
         filtered: list[FoodListingSummary] = []
         for row in all_rows:
-            if is_within_distance(lat, lon, row.latitude, row.longitude, max_distance_km):  # type: ignore[arg-type]
-                summary = FoodListingSummary.model_validate(row)
-                if row.latitude is not None and row.longitude is not None:
-                    from app.core.utils import haversine
-                    summary.distance_km = round(
-                        haversine(lat, lon, row.latitude, row.longitude), 2  # type: ignore[arg-type]
-                    )
-                filtered.append(summary)
+            dist: float | None = None
+            if row.latitude is not None and row.longitude is not None:
+                dist = round(haversine(lat, lon, row.latitude, row.longitude), 2)
 
-        # Update total to reflect post-haversine count, then paginate in Python
+            # Filter by radius if coordinates exist
+            if dist is not None and max_distance_km is not None and dist > max_distance_km:
+                continue
+
+            summary = FoodListingSummary.model_validate(row)
+            summary.distance_km = dist
+            filtered.append(summary)
+
+        # Sort available food donations from nearest donor to farthest donor
+        filtered.sort(
+            key=lambda item: (
+                item.distance_km is None,
+                item.distance_km if item.distance_km is not None else float("inf"),
+            )
+        )
+
         total = len(filtered)
         items = filtered[offset : offset + limit]
 
@@ -576,6 +557,23 @@ async def claim_listing(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Listing {listing_id} not found.",
+        )
+
+    # ── Connection check ──────────────────────────────────────────────────
+    # Receiver must be connected with the listing donor before claiming food
+    conn_stmt = select(Connection).where(
+        Connection.donor_id == listing.donor_id,
+        Connection.receiver_id == current_user.id,
+        Connection.status == ConnectionStatus.ACCEPTED,
+    )
+    conn_res = await db.execute(conn_stmt)
+    if not conn_res.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "You must be connected with this donor before claiming their food listing. "
+                "Please send a connection request to the donor or accept their request."
+            ),
         )
 
     # ── Expiry check ──────────────────────────────────────────────────────

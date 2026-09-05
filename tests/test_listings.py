@@ -40,9 +40,24 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.claim import Claim, ClaimStatus
+from app.models.connection import Connection, ConnectionStatus
 from app.models.food_listing import FoodListing, FoodType, ListingStatus
 from app.models.notification import Notification
 from app.models.user import User
+
+
+async def _create_accepted_connection(db: AsyncSession, donor_id: int, receiver_id: int):
+    conn = Connection(
+        requester_id=donor_id,
+        addressee_id=receiver_id,
+        donor_id=donor_id,
+        receiver_id=receiver_id,
+        status=ConnectionStatus.ACCEPTED,
+    )
+    db.add(conn)
+    await db.commit()
+    return conn
+
 
 
 # ── Helper to create a listing directly or via API ────────────────────────────
@@ -227,6 +242,7 @@ async def test_claim_listing_receiver_success(
     """
     donor, _, donor_headers = donor_user
     receiver, _, receiver_headers = receiver_user
+    await _create_accepted_connection(db_session, donor.id, receiver.id)
 
     listing = await _create_sample_listing(client, donor_headers, title="Claimable Soup")
     listing_id = listing["id"]
@@ -262,11 +278,16 @@ async def test_claim_listing_prevent_double_claim(
     donor_user: tuple[User, str, dict[str, str]],
     receiver_user: tuple[User, str, dict[str, str]],
     other_receiver_user: tuple[User, str, dict[str, str]],
+    db_session: AsyncSession,
 ):
     """Verify that once claimed, subsequent claims return 409 Conflict (no double claiming)."""
-    _, _, donor_headers = donor_user
-    _, _, receiver1_headers = receiver_user
-    _, _, receiver2_headers = other_receiver_user
+    donor, _, donor_headers = donor_user
+    receiver1, _, receiver1_headers = receiver_user
+    receiver2, _, receiver2_headers = other_receiver_user
+
+    await _create_accepted_connection(db_session, donor.id, receiver1.id)
+    await _create_accepted_connection(db_session, donor.id, receiver2.id)
+
 
     listing = await _create_sample_listing(client, donor_headers, title="Single Meal")
     listing_id = listing["id"]
@@ -350,10 +371,12 @@ async def test_update_listing_forbidden_when_claimed(
     client: httpx.AsyncClient,
     donor_user: tuple[User, str, dict[str, str]],
     receiver_user: tuple[User, str, dict[str, str]],
+    db_session: AsyncSession,
 ):
     """Verify that once a listing is claimed, it cannot be modified (400 Bad Request)."""
-    _, _, donor_headers = donor_user
-    _, _, receiver_headers = receiver_user
+    donor, _, donor_headers = donor_user
+    receiver, _, receiver_headers = receiver_user
+    await _create_accepted_connection(db_session, donor.id, receiver.id)
 
     listing = await _create_sample_listing(client, donor_headers, title="Freeze Check")
     listing_id = listing["id"]
@@ -412,10 +435,12 @@ async def test_complete_listing_by_donor(
     client: httpx.AsyncClient,
     donor_user: tuple[User, str, dict[str, str]],
     receiver_user: tuple[User, str, dict[str, str]],
+    db_session: AsyncSession,
 ):
     """Verify that donor can mark claimed listing as picked_up / completed."""
-    _, _, donor_headers = donor_user
-    _, _, receiver_headers = receiver_user
+    donor, _, donor_headers = donor_user
+    receiver, _, receiver_headers = receiver_user
+    await _create_accepted_connection(db_session, donor.id, receiver.id)
 
     listing = await _create_sample_listing(client, donor_headers, title="Pickup Item")
     listing_id = listing["id"]
@@ -438,10 +463,12 @@ async def test_complete_listing_by_receiver(
     client: httpx.AsyncClient,
     donor_user: tuple[User, str, dict[str, str]],
     receiver_user: tuple[User, str, dict[str, str]],
+    db_session: AsyncSession,
 ):
     """Verify that claiming receiver can also mark listing as completed."""
-    _, _, donor_headers = donor_user
-    _, _, receiver_headers = receiver_user
+    donor, _, donor_headers = donor_user
+    receiver, _, receiver_headers = receiver_user
+    await _create_accepted_connection(db_session, donor.id, receiver.id)
 
     listing = await _create_sample_listing(client, donor_headers, title="Receiver Pickup Item")
     listing_id = listing["id"]
@@ -460,11 +487,13 @@ async def test_complete_listing_unauthorized_user(
     donor_user: tuple[User, str, dict[str, str]],
     receiver_user: tuple[User, str, dict[str, str]],
     other_donor_user: tuple[User, str, dict[str, str]],
+    db_session: AsyncSession,
 ):
     """Verify that an uninvolved third-party user cannot complete a listing (403 Forbidden)."""
-    _, _, donor_headers = donor_user
-    _, _, receiver_headers = receiver_user
+    donor, _, donor_headers = donor_user
+    receiver, _, receiver_headers = receiver_user
     _, _, other_donor_headers = other_donor_user
+    await _create_accepted_connection(db_session, donor.id, receiver.id)
 
     listing = await _create_sample_listing(client, donor_headers, title="Unauthorized Complete")
     listing_id = listing["id"]
@@ -475,3 +504,4 @@ async def test_complete_listing_unauthorized_user(
     response = await client.post(f"/listings/{listing_id}/complete", headers=other_donor_headers)
     assert response.status_code == 403
     assert "only the listing's donor or the claiming receiver" in response.json()["detail"].lower()
+

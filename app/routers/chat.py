@@ -1,9 +1,9 @@
 """
-app/routers/chat.py — WebSocket Real-time Unified Chat Router
-===============================================================
+app/routers/chat.py — WebSocket Real-time Unified & Private Chat Router
+========================================================================
 
 Provides WebSocket real-time messaging and REST history retrieval
-for Donors, Receivers, and Admins to interact in unified channels.
+for Donors, Receivers, and Admins to interact in unified or private channels.
 """
 
 import json
@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 from app.core.security import decode_access_token
 from app.db.database import AsyncSessionLocal, get_db
 from app.models.chat_message import ChatMessage
+from app.models.connection import Connection, ConnectionStatus
 from app.models.user import User
 from app.schemas.chat import ChatMessageOut
 
@@ -25,7 +26,7 @@ router = APIRouter()
 
 class ConnectionManager:
     """
-    Manages active WebSocket connections across different chat channels.
+    Manages active WebSocket connections across public and private chat channels.
     """
 
     def __init__(self):
@@ -43,10 +44,23 @@ class ConnectionManager:
     async def broadcast(self, payload: dict, channel_id: Optional[str] = None):
         """
         Broadcast JSON payload to connected sockets.
-        If channel_id is provided, sends to all connections.
+        If channel_id starts with 'private_', sends ONLY to participants of that private chat.
         """
+        target_user_ids = None
+        if channel_id and channel_id.startswith("private_"):
+            parts = channel_id.split("_")
+            if len(parts) >= 3:
+                try:
+                    target_user_ids = {int(parts[1]), int(parts[2])}
+                except ValueError:
+                    pass
+
         disconnected = []
-        for connection in list(self.active_connections.keys()):
+        for connection, uinfo in list(self.active_connections.items()):
+            if target_user_ids is not None:
+                if uinfo.get("id") not in target_user_ids:
+                    continue  # Skip users not part of this private chat
+
             try:
                 await connection.send_json(payload)
             except Exception:
@@ -101,7 +115,7 @@ async def websocket_chat_endpoint(
     token: Optional[str] = Query(None),
 ):
     """
-    WebSocket endpoint for real-time unified chat.
+    WebSocket endpoint for real-time unified & private chat.
     Requires token parameter for authentication: ws://.../chat/ws?token=<jwt_access_token>
     """
     if not token:
@@ -183,10 +197,10 @@ async def websocket_chat_endpoint(
                     },
                 }
 
-            # Broadcast message to all connected users
+            # Broadcast message to targeted sockets
             await manager.broadcast(msg_payload, channel_id=channel_id)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-    except Exception as e:
+    except Exception:
         manager.disconnect(websocket)

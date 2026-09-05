@@ -32,6 +32,9 @@ class UserBase(BaseModel):
     email: EmailStr = Field(..., examples=["rahul@example.com"])
     phone: str | None = Field(None, max_length=20, examples=["+91-9876543210"])
     role: UserRole = Field(UserRole.RECEIVER, examples=[UserRole.DONOR])
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    address: str | None = Field(None, max_length=500)
 
 
 # ── Create ────────────────────────────────────────────────────────────────────
@@ -54,14 +57,16 @@ class UserCreate(UserBase):
 # ── Update ────────────────────────────────────────────────────────────────────
 class UserUpdate(BaseModel):
     """
-    Used in PATCH /users/{id}.
+    Used in PUT /auth/me or PATCH /users/{id}.
     All fields are optional — only provided fields are updated.
-    Password change handled by a separate dedicated endpoint for clarity.
     """
 
     name: str | None = Field(None, min_length=1, max_length=100)
     phone: str | None = Field(None, max_length=20)
     is_verified: bool | None = None
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    address: str | None = Field(None, max_length=500)
 
 
 # ── Read ──────────────────────────────────────────────────────────────────────
@@ -88,5 +93,8 @@ class UserPublic(BaseModel):
     id: int
     name: str
     role: UserRole
+    latitude: float | None = None
+    longitude: float | None = None
+    address: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

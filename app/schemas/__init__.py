@@ -27,6 +27,7 @@ from app.schemas.food_listing import (
 )
 from app.schemas.claim import ClaimBase, ClaimCreate, ClaimUpdate, ClaimRead, ClaimSummary
 from app.schemas.notification import NotificationRead, NotificationCreate, NotificationUpdate
+from app.schemas.connection import ConnectionCreate, ConnectionUpdate, ConnectionRead, ConnectionStatusResponse
 
 __all__ = [
     # User
@@ -38,4 +39,7 @@ __all__ = [
     "ClaimBase", "ClaimCreate", "ClaimUpdate", "ClaimRead", "ClaimSummary",
     # Notification
     "NotificationRead", "NotificationCreate", "NotificationUpdate",
+    # Connection
+    "ConnectionCreate", "ConnectionUpdate", "ConnectionRead", "ConnectionStatusResponse",
 ]
+

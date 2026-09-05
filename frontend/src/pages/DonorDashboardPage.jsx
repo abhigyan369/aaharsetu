@@ -2,18 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { listingsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { LocationPickerModal } from '../components/LocationPickerModal';
 
 export const DonorDashboardPage = () => {
-  const { user } = useAuth();
+  const { user, updateProfile } = useAuth();
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
 
   const fetchDonorListings = async () => {
     try {
       setLoading(true);
-      // Fetch all listings and filter for current donor
       const data = await listingsApi.getAll();
       const items = Array.isArray(data) ? data : (data.items || []);
       const myItems = items.filter(item => item.donor_id === user?.id || item.donor?.id === user?.id);
@@ -41,6 +42,21 @@ export const DonorDashboardPage = () => {
     }
   };
 
+  const handleSaveDefaultLocation = async (loc) => {
+    try {
+      setActionSuccess('');
+      setError('');
+      await updateProfile({
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        address: loc.address
+      });
+      setActionSuccess('Your default pickup location was updated successfully!');
+    } catch (err) {
+      setError(err.message || 'Failed to update default location.');
+    }
+  };
+
   const activeCount = listings.filter(l => l.status === 'available').length;
   const completedCount = listings.filter(l => l.status === 'completed' || l.status === 'picked_up').length;
 
@@ -58,6 +74,28 @@ export const DonorDashboardPage = () => {
 
       {error && <div className="alert alert-error">{error}</div>}
       {actionSuccess && <div className="alert alert-success">{actionSuccess}</div>}
+
+      {/* Saved Default Location Card */}
+      <div className="card" style={{ marginBottom: '1.5rem', padding: '1rem 1.25rem', backgroundColor: '#f8fafc', borderLeft: '4px solid #16a34a' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+          <div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: '#16a34a', letterSpacing: '0.05em' }}>
+              📍 Saved Default Pickup Location
+            </div>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#0f172a' }}>
+              {user?.address || 'No default address set'}
+            </div>
+            {user?.latitude && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                Lat: {user.latitude}, Lon: {user.longitude}
+              </div>
+            )}
+          </div>
+          <button onClick={() => setIsLocationModalOpen(true)} className="btn btn-outline btn-sm">
+            🗺️ Edit Location on OpenStreetMap
+          </button>
+        </div>
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
         <div className="card" style={{ borderLeft: '4px solid var(--color-primary)' }}>
@@ -132,6 +170,16 @@ export const DonorDashboardPage = () => {
           </div>
         )}
       </div>
+
+      <LocationPickerModal
+        isOpen={isLocationModalOpen}
+        onClose={() => setIsLocationModalOpen(false)}
+        onSave={handleSaveDefaultLocation}
+        initialLat={user?.latitude || '28.6139'}
+        initialLng={user?.longitude || '77.2090'}
+        initialAddress={user?.address || ''}
+        title="Set Default Donor Pickup Location"
+      />
     </div>
   );
 };

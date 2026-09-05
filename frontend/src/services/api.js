@@ -5,7 +5,7 @@
  * Automatically injects the JWT Bearer token from localStorage.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export async function apiFetch(endpoint, options = {}) {
   const token = localStorage.getItem('access_token');
@@ -89,6 +89,13 @@ export const authApi = {
   getMe: async () => {
     return apiFetch('/auth/me');
   },
+
+  updateMe: async (userData) => {
+    return apiFetch('/auth/me', {
+      method: 'PUT',
+      body: JSON.stringify(userData),
+    });
+  },
 };
 
 // ── Listings Endpoints ────────────────────────────────────────────────────────
@@ -97,8 +104,9 @@ export const listingsApi = {
     const query = new URLSearchParams();
     if (params.food_type) query.append('food_type', params.food_type);
     if (params.status) query.append('status', params.status);
-    if (params.lat) query.append('lat', params.lat);
-    if (params.lng) query.append('lng', params.lng);
+    if (params.lat !== undefined && params.lat !== null && params.lat !== '') query.append('lat', params.lat);
+    if (params.lon !== undefined && params.lon !== null && params.lon !== '') query.append('lon', params.lon);
+    else if (params.lng !== undefined && params.lng !== null && params.lng !== '') query.append('lon', params.lng);
     if (params.max_distance_km) query.append('max_distance_km', params.max_distance_km);
 
     const queryString = query.toString() ? `?${query.toString()}` : '';
@@ -144,3 +152,35 @@ export const chatApi = {
     return apiFetch(`/chat/history?channel_id=${encodeURIComponent(channelId)}`);
   },
 };
+
+// ── Connections Endpoints ──────────────────────────────────────────────────────
+export const connectionsApi = {
+  sendRequest: async (peerId) => {
+    return apiFetch('/connections/request', {
+      method: 'POST',
+      body: JSON.stringify({ peer_id: peerId }),
+    });
+  },
+
+  acceptRequest: async (connectionId) => {
+    return apiFetch(`/connections/${connectionId}/accept`, {
+      method: 'POST',
+    });
+  },
+
+  declineRequest: async (connectionId) => {
+    return apiFetch(`/connections/${connectionId}/decline`, {
+      method: 'POST',
+    });
+  },
+
+  getConnections: async (status = '') => {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    return apiFetch(`/connections${query}`);
+  },
+
+  getStatus: async (peerId) => {
+    return apiFetch(`/connections/status/${peerId}`);
+  },
+};
+

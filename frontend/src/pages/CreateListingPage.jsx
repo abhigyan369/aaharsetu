@@ -1,28 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { listingsApi } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { LocationPickerModal } from '../components/LocationPickerModal';
 
 export const CreateListingPage = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [foodType, setFoodType] = useState('cooked');
   const [quantity, setQuantity] = useState('');
   const [quantityUnit, setQuantityUnit] = useState('portions');
-  const [address, setAddress] = useState('');
+  const [address, setAddress] = useState(user?.address || '');
   const [expiryTime, setExpiryTime] = useState('');
-  const [latitude, setLatitude] = useState('37.7749');
-  const [longitude, setLongitude] = useState('-122.4194');
+  const [latitude, setLatitude] = useState(user?.latitude ? String(user.latitude) : '28.6139');
+  const [longitude, setLongitude] = useState(user?.longitude ? String(user.longitude) : '77.2090');
   const [imageFile, setImageFile] = useState(null);
 
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const navigate = useNavigate();
+  useEffect(() => {
+    if (user) {
+      if (user.address) setAddress(user.address);
+      if (user.latitude) setLatitude(String(user.latitude));
+      if (user.longitude) setLongitude(String(user.longitude));
+    }
+  }, [user]);
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       setImageFile(e.target.files[0]);
     }
+  };
+
+  const handleLocationSaved = (loc) => {
+    if (loc.latitude) setLatitude(String(loc.latitude));
+    if (loc.longitude) setLongitude(String(loc.longitude));
+    if (loc.address) setAddress(loc.address);
   };
 
   const handleSubmit = async (e) => {
@@ -31,6 +49,25 @@ export const CreateListingPage = () => {
     setSubmitting(true);
 
     try {
+      let finalLat = latitude;
+      let finalLng = longitude;
+
+      // Auto-geocode address if lat/lon are missing or default
+      if (address && (finalLat === '28.6139' || finalLat === '37.7749' || !finalLat)) {
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.length > 0) {
+              finalLat = String(data[0].lat);
+              finalLng = String(data[0].lon);
+            }
+          }
+        } catch (err) {
+          console.warn("Auto-geocode failed:", err);
+        }
+      }
+
       const formData = new FormData();
       formData.append('title', title);
       formData.append('description', description);
@@ -38,11 +75,10 @@ export const CreateListingPage = () => {
       formData.append('quantity', quantity);
       formData.append('quantity_unit', quantityUnit);
       formData.append('address', address);
-      formData.append('latitude', latitude);
-      formData.append('longitude', longitude);
+      formData.append('latitude', finalLat);
+      formData.append('longitude', finalLng);
 
       if (expiryTime) {
-        // Convert to ISO 8601 string
         formData.append('expiry_time', new Date(expiryTime).toISOString());
       }
 
@@ -143,8 +179,19 @@ export const CreateListingPage = () => {
             />
           </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="address">Pickup Location Address *</label>
+          {/* Location Section with Leaflet Map Selector */}
+          <div className="form-group" style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <label className="form-label" style={{ margin: 0 }}>📍 Pickup Location & Coords *</label>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => setIsMapModalOpen(true)}
+              >
+                🗺️ Select on OpenStreetMap
+              </button>
+            </div>
+
             <input
               id="address"
               type="text"
@@ -152,8 +199,18 @@ export const CreateListingPage = () => {
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               required
-              placeholder="e.g. 123 Main St, Community Center Hall B"
+              placeholder="Full pickup address (e.g. 123 Main St, Community Center)"
+              style={{ marginBottom: '0.75rem' }}
             />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.85rem' }}>
+              <div>
+                <span style={{ color: 'var(--color-text-muted)' }}>Lat:</span> <strong>{latitude}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--color-text-muted)' }}>Lon:</span> <strong>{longitude}</strong>
+              </div>
+            </div>
           </div>
 
           <div className="form-group grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -192,6 +249,17 @@ export const CreateListingPage = () => {
           </div>
         </form>
       </div>
+
+      <LocationPickerModal
+        isOpen={isMapModalOpen}
+        onClose={() => setIsMapModalOpen(false)}
+        onSave={handleLocationSaved}
+        initialLat={latitude}
+        initialLng={longitude}
+        initialAddress={address}
+        title="Select Exact Pickup Location"
+      />
     </div>
   );
 };
+

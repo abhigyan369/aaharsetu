@@ -140,19 +140,34 @@ if os.path.exists("frontend/dist/assets"):
 # ── Register API Routers ──────────────────────────────────────────────────────
 # The `prefix` is prepended to every route in that router.
 # The `tags` group endpoints in the /docs UI.
+from fastapi import APIRouter
 from app.routers import auth  # noqa: E402
 from app.routers import listings  # noqa: E402
 from app.routers import notifications  # noqa: E402
 from app.routers import admin  # noqa: E402  # Phase 6: analytics dashboard
 from app.routers import chat  # noqa: E402
+from app.routers import connections  # noqa: E402
 from app.routers import pages  # noqa: E402  # Phase 7: Jinja2 HTML pages
 
+# 1) Router with /api prefix (for frontends calling /api/auth, /api/listings, etc.)
+api_router = APIRouter(prefix="/api")
+api_router.include_router(auth.router,          prefix="/auth",          tags=["Auth"])
+api_router.include_router(listings.router,      prefix="/listings",      tags=["Listings"])
+api_router.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
+api_router.include_router(admin.router,         prefix="/admin",         tags=["Admin"])
+api_router.include_router(chat.router,          prefix="/chat",          tags=["Chat"])
+api_router.include_router(connections.router,   prefix="/connections",   tags=["Connections"])
+
+# 2) Directly include routers at root level for legacy calls & direct backend tests
+app.include_router(api_router)
 app.include_router(auth.router,          prefix="/auth",          tags=["Auth"])
 app.include_router(listings.router,      prefix="/listings",      tags=["Listings"])
 app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
 app.include_router(admin.router,         prefix="/admin",         tags=["Admin"])
 app.include_router(chat.router,          prefix="/chat",          tags=["Chat"])
+app.include_router(connections.router,   prefix="/connections",   tags=["Connections"])
 app.include_router(pages.router,         prefix="/pages",         tags=["Pages"])
+
 
 # ── Register Jinja2 custom filters ────────────────────────────────────────────
 admin.templates.env.filters["zip"] = zip
@@ -190,6 +205,13 @@ async def health_check(db: AsyncSession = Depends(get_db)):
 if os.path.exists("frontend/dist"):
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa_route(full_path: str):
+        # Do not fall back to index.html for unmatched API paths — return JSON 404
+        if full_path.startswith("api/") or full_path.startswith("auth/") or full_path.startswith("listings/"):
+            file_path = os.path.join("frontend/dist", full_path)
+            if os.path.isfile(file_path):
+                return FileResponse(file_path)
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
         file_path = os.path.join("frontend/dist", full_path)
         if full_path and os.path.isfile(file_path):
             return FileResponse(file_path)
@@ -198,4 +220,5 @@ if os.path.exists("frontend/dist"):
     @app.get("/", include_in_schema=False)
     async def serve_spa_root():
         return FileResponse("frontend/dist/index.html")
+
 
